@@ -36,7 +36,82 @@ way that introduces the lilihood of developer misuse or misunderstanding of time
 
 ## example use?
 
-TODO (PRs welcome)
+TODO: improve this (PRs welcome)
+
+```py
+
+from scheduler import Scheduler, 
+
+class MyBot(commands.Bot):
+
+    def __init__(self, scheduler: Scheduler):
+        self.scheduler = scheduler
+        super().__init__(intents=...)
+    
+    async def setup_hook(self):
+        self.scheduler.start_dispatch_to_bot(self)
+
+
+async def main():
+
+    path = pathlib.Path("scheduler_data.db")
+    scheduler = Scheduler(path, granularity=1)
+    bot = MyBot(..., scheduler)
+    async with scheduler, bot:
+        bot.start(TOKEN)
+
+
+
+
+# in a cog:
+
+
+class Reminder(commands.Cog):
+
+    @commands.Cog.listener("on_sinbad_scheduler_reminder")
+    async def send_reminder(self, payload: ScheduledDispatch):
+        extra_data = payload.unpack_extra()
+        guild = self.bot.get_guild(payload.dispatch_guild)
+        if not guild:
+            return
+        member = guild.get_member(payload.dispatch_user)
+        if not member:
+            return
+        
+        channel = guild.get_channel(extra_data["channel_id"])
+        if not channel:
+            return
+        
+        await channel.send(
+            f"{member.mention} {extra_data["msg"]}",
+            allowed_mentions=discord.AllowedMentions(users=member, everyone=False, roles=False),
+        )
+    
+
+    async def create_reminder_for_member(self, channel, member, message, timedelta):
+        """
+        This example is for something like "in 4 hours" where absolute time makes sense,
+        for scheduling at a specific time like
+        "July 24 at noon US/Eastern" you'd need to handle more and pass "US/Eastern"
+        A utility is included in the scheduler class for alternate construction
+        """
+
+        when = discord.utils.utcnow() + timedelta
+        datestr = when.strftime("%Y-%m-%d %H:%M")
+
+        self.bot.scheduler.schedule_event(
+            dispatch_name="reminder",
+            dispatch_guild=member.guild.id,
+            dispatch_user=member.id,
+            dispatch_time=datestr,
+            dispatch_zone="utc",
+            dispatch_extra=dict(channel_id=channel.id, msg=message),
+        )
+
+    # There are also ways to list or drop for a user, memebr, or guild.
+
+```
+
 
 
 ## Docs?
