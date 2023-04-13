@@ -51,17 +51,18 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         self.scheduler.start_dispatch_to_bot(self)
 
+    async def close(self):
+        await self.scheduler.stop_gracefully()
+        await super().close()
+
 
 async def main():
 
     path = pathlib.Path("scheduler_data.db")
     scheduler = Scheduler(path, granularity=1)
-    bot = MyBot(..., scheduler)
+    bot = MyBot(scheduler)
     async with scheduler, bot:
         bot.start(TOKEN)
-
-
-
 
 # in a cog:
 
