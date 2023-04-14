@@ -12,22 +12,20 @@ import asyncio
 from itertools import chain
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Generic, Self, TypeVar
+from typing import Any, Self
 from uuid import uuid4
 from warnings import warn
 
 import apsw
 import arrow
 import attrs
-import msgpack
+import msgpack  # type: ignore
 from discord.ext import commands
 
 __all__ = ["ScheduledDispatch", "Scheduler"]
 
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
-
-T = TypeVar("T")
 
 
 INITIALIZATION_STATEMENTS = """
@@ -148,7 +146,7 @@ RETURNING *;
 
 
 @attrs.define(frozen=True)
-class ScheduledDispatch(Generic[T]):
+class ScheduledDispatch:
     task_id: str
     dispatch_name: str
     dispatch_time: str
@@ -160,7 +158,7 @@ class ScheduledDispatch(Generic[T]):
     @classmethod
     def from_sqlite_row(cls: type[Self], row: SQLROW_TYPE) -> Self:
         tid, name, time, zone, guild, user, extra_bytes = row
-        unpacked = msgpack.unpackb(extra_bytes, use_list=False, strict_map_key=False)
+        unpacked: Any = msgpack.unpackb(extra_bytes, use_list=False, strict_map_key=False)  # type: ignore
         return cls(tid, name, time, zone, guild, user, unpacked)
 
     @classmethod
@@ -172,11 +170,13 @@ class ScheduledDispatch(Generic[T]):
         zone: str,
         guild: int | None,
         user: int | None,
-        extra: T,
+        extra: Any | None,
     ) -> Self:
-        packed: bytes | None = (
-            None if extra is None else msgpack.packb(extra, use_list=False, strict_map_key=False)  # type: ignore
-        )
+        packed: bytes | None = None
+        if extra is not None:
+            f = msgpack.packb(extra, use_list=False, strict_map_key=False)  # type: ignore
+            assert isinstance(f, bytes)
+            packed = f
         return cls(uuid4().hex, name, time, zone, guild, user, packed)
 
     def to_sqlite_row(self: Self) -> SQLROW_TYPE:
@@ -193,9 +193,9 @@ class ScheduledDispatch(Generic[T]):
     def get_arrow_time(self: Self) -> arrow.Arrow:
         return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, self.dispatch_zone)
 
-    def unpack_extra(self: Self) -> T | None:
+    def unpack_extra(self: Self) -> Any | None:
         if self.dispatch_extra:
-            return msgpack.unpackb(self.dispatch_extra, use_list=False, strict_map_key=False)
+            return msgpack.unpackb(self.dispatch_extra, use_list=False, strict_map_key=False)  # type: ignore
         return None
 
 
