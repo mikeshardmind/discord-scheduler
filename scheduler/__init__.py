@@ -9,4 +9,4 @@ Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 from .scheduler import ScheduledDispatch, Scheduler
 
 __all__ = ["ScheduledDispatch", "Scheduler"]
-__version__ = "2023.04.14"
+__version__ = "2023.04.15"

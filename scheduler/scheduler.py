@@ -9,7 +9,8 @@ Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 from __future__ import annotations
 
 import asyncio
-from itertools import chain
+from datetime import timedelta
+from itertools import chain, count
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Self
@@ -26,6 +27,8 @@ __all__ = ["ScheduledDispatch", "Scheduler"]
 
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
+
+_c = count()
 
 
 INITIALIZATION_STATEMENTS = """
@@ -154,6 +157,22 @@ class ScheduledDispatch:
     associated_guild: int | None
     associated_user: int | None
     dispatch_extra: bytes | None
+    _count: int = attrs.field(init=False, factory=lambda: next(_c))
+
+    def __eq__(self: Self, other: object) -> bool:
+        return self is other
+
+    def __lt__(self: Self, other: object) -> bool:
+        if type(self) is type(other):
+            assert isinstance(other, ScheduledDispatch)
+            return (self.get_arrow_time(), self._count) < (other.get_arrow_time(), other._count)
+        return False
+
+    def __gt__(self: Self, other: object) -> bool:
+        if type(self) is type(other):
+            assert isinstance(other, ScheduledDispatch)
+            return (self.get_arrow_time(), self._count) > (other.get_arrow_time(), other._count)
+        return False
 
     @classmethod
     def from_sqlite_row(cls: type[Self], row: SQLROW_TYPE) -> Self:
@@ -207,16 +226,16 @@ def _setup_db(conn: apsw.Connection) -> set[str]:
         return set(chain.from_iterable(cursor))
 
 
-def _get_scheduled(conn: apsw.Connection, zones: set[str]) -> list[ScheduledDispatch]:
+def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> list[ScheduledDispatch]:
     ret: list[ScheduledDispatch] = []
     if not zones:
         return ret
 
-    now = arrow.utcnow()
+    cutoff = arrow.utcnow() + timedelta(minutes=granularity)
     with conn:  # type: ignore # apsw.Connection *does* implement everything needed to be a contextmanager, upstream PR?
         cursor = conn.cursor()
         for zone in zones:
-            local_time = now.to(zone).strftime(DATE_FMT)
+            local_time = cutoff.to(zone).strftime(DATE_FMT)
             cursor.execute(DELETE_RETURNING_UPCOMING_IN_ZONE_STATEMENT, (local_time, zone))
             ret.extend(map(ScheduledDispatch.from_sqlite_row, cursor))
 
@@ -263,7 +282,7 @@ def _drop(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) 
 
 
 class Scheduler:
-    def __init__(self: Self, db_path: Path, granularity: int):
+    def __init__(self: Self, db_path: Path, granularity: int = 1):
         if granularity < 1:
             msg = "Granularity must be a positive iteger number of minutes"
             raise ValueError(msg)
@@ -272,8 +291,7 @@ class Scheduler:
         resolved_path_as_str = str(db_path.resolve(strict=True))
         self._connection = apsw.Connection(resolved_path_as_str)
         self._zones: set[str] = set()  # We don't re-narrow this anywhere currently, only expand it.
-        self._queue: asyncio.Queue[ScheduledDispatch] = asyncio.Queue()
-        self._last_time: arrow.Arrow
+        self._queue: asyncio.PriorityQueue[ScheduledDispatch] = asyncio.PriorityQueue()
         self._ready = False
         self._closing = False
         self._lock = asyncio.Lock()
@@ -290,15 +308,17 @@ class Scheduler:
 
     async def _loop(self: Self) -> None:
         # not currently modifiable once running
-        gran = self.granularity
-        while (not self._closing) and await asyncio.sleep(gran, self._ready):
+        # differing granularities here, + a delay on retrieving in .get_next()
+        # ensures closest
+        sleep_gran = self.granularity * 25
+        while (not self._closing) and await asyncio.sleep(sleep_gran, self._ready):
             # Lock needed to ensure that once the db is dropping rows
             # that a graceful shutdown doesn't drain the queue until entries are in it.
             async with self._lock:
                 # check on both ends of the await that we aren't closing
                 if self._closing:
                     return
-                scheduled = await asyncio.to_thread(_get_scheduled, self._connection, self._zones)
+                scheduled = await asyncio.to_thread(_get_scheduled, self._connection, self.granularity, self._zones)
                 for s in scheduled:
                     await self._queue.put(s)
 
@@ -318,7 +338,13 @@ class Scheduler:
         gets the next scheduled event, waiting if neccessary.
         """
         try:
-            return await self._queue.get()
+            dispatch = await self._queue.get()
+            now = arrow.utcnow()
+            scheduled_for = dispatch.get_arrow_time()
+            if now < scheduled_for:
+                delay = (now - scheduled_for).total_seconds()
+                await asyncio.sleep(delay)
+            return dispatch
         finally:
             self._queue.task_done()
 
@@ -330,7 +356,6 @@ class Scheduler:
             await self._queue.join()
 
     async def __aenter__(self: Self) -> Self:
-        self._last_time = arrow.utcnow()
         self._zones = await asyncio.to_thread(_setup_db, self._connection)
         self._ready = True
         self._loop_task = asyncio.create_task(self._loop())
@@ -530,7 +555,7 @@ class Scheduler:
         if wait_until_ready:
             await bot.wait_until_ready()
 
-        while scheduled := await self._queue.get():
+        while scheduled := await self.get_next():
             bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
 
     def start_dispatch_to_bot(self: Self, bot: commands.Bot, *, wait_until_ready: bool = True) -> None:
