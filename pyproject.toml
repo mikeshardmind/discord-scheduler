@@ -47,7 +47,6 @@ dependencies = [
     "apsw>=3.41.2.0",
     "msgpack>=1.0.4",
     "attrs>=22.1.0",
-    "discord.py>=2.2.2",
 ]
 
 
@@ -65,3 +64,9 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 include = ["/scheduler/*"]
+
+
+[tool.pyright]
+include = ["scheduler"]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"

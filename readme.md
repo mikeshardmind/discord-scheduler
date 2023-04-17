@@ -40,7 +40,7 @@ TODO: improve this (PRs welcome)
 
 ```py
 
-from scheduler import Scheduler, 
+from scheduler import DiscordBotScheduler as Scheduler, 
 
 class MyBot(commands.Bot):
 

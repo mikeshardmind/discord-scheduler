@@ -13,7 +13,7 @@ from datetime import timedelta
 from itertools import chain, count
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Protocol, Self
 from uuid import uuid4
 from warnings import warn
 
@@ -21,7 +21,15 @@ import apsw
 import arrow
 import attrs
 import msgpack  # type: ignore
-from discord.ext import commands
+
+
+class BotLike(Protocol):
+    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
+        ...
+
+    async def wait_until_ready(self: Self) -> None:
+        ...
+
 
 __all__ = ["ScheduledDispatch", "Scheduler"]
 
@@ -547,7 +555,13 @@ class Scheduler:
         """
         return arrow.Arrow(year, month, day, hour, minute).strftime(DATE_FMT)
 
-    async def _bot_dispatch_loop(self: Self, bot: commands.Bot, wait_until_ready: bool) -> None:
+
+class DiscordBotScheduler(Scheduler):
+    """Scheduler with convienence dispatches compatible with discord.py's commands extenstion
+    Note: long-term compatability not guaranteed, dispatch isn't covered by discord.py's version guarantees.
+    """
+
+    async def _bot_dispatch_loop(self: Self, bot: BotLike, wait_until_ready: bool) -> None:
         if not self._ready:
             msg = "context manager, use it"
             raise RuntimeError(msg)
@@ -558,7 +572,7 @@ class Scheduler:
         while scheduled := await self.get_next():
             bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
 
-    def start_dispatch_to_bot(self: Self, bot: commands.Bot, *, wait_until_ready: bool = True) -> None:
+    def start_dispatch_to_bot(self: Self, bot: BotLike, *, wait_until_ready: bool = True) -> None:
         """
         Starts dispatching events to the bot.
 
