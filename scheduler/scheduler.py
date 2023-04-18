@@ -31,7 +31,7 @@ class BotLike(Protocol):
         ...
 
 
-__all__ = ["ScheduledDispatch", "Scheduler"]
+__all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
 
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
