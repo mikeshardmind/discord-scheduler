@@ -8,8 +8,11 @@ A persistent scheduling implementation suitable for use with discord.py
 
 ## Implementation details
 
-This is designed for use alongside a discord.py bot or client, uses sqlite as a persistent backend via apsw, and uses arrow for correct time handling.
+This is designed for use alongside a discord.py bot or client,
+uses sqlite as a persistent backend via apsw, and uses arrow for correct time handling.
 
+This currently dispatches the first time the walltime for a zone is at or past the configured time.
+folds are not disambiguated. This is considered acceptable currently but is not ideal and may be changed later.
 
 ## pypi?
 
