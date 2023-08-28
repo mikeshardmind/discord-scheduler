@@ -13,14 +13,15 @@ from datetime import timedelta
 from itertools import chain, count
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Protocol, Self
+from typing import Protocol, Self
 from uuid import uuid4
 from warnings import warn
 
 import apsw
 import arrow
-import attrs
-import msgpack  # type: ignore
+from msgspec import Struct, field
+from msgspec.msgpack import decode as msgpack_decode
+from msgspec.msgpack import encode as msgpack_encode
 
 
 class BotLike(Protocol):
@@ -159,8 +160,7 @@ RETURNING *;
 """
 
 
-@attrs.define(frozen=True)
-class ScheduledDispatch:
+class ScheduledDispatch(Struct, frozen=True, gc=False):
     task_id: str
     dispatch_name: str
     dispatch_time: str
@@ -168,7 +168,8 @@ class ScheduledDispatch:
     associated_guild: int | None
     associated_user: int | None
     dispatch_extra: bytes | None
-    _count: int = attrs.field(init=False, factory=lambda: next(_c))
+    _count: int = field(default_factory=lambda: next(_c))
+
 
     def __eq__(self: Self, other: object) -> bool:
         return self is other
@@ -188,8 +189,7 @@ class ScheduledDispatch:
     @classmethod
     def from_sqlite_row(cls: type[Self], row: SQLROW_TYPE) -> Self:
         tid, name, time, zone, guild, user, extra_bytes = row
-        unpacked: Any = msgpack.unpackb(extra_bytes, use_list=False, strict_map_key=False)  # type: ignore
-        return cls(tid, name, time, zone, guild, user, unpacked)
+        return cls(tid, name, time, zone, guild, user, extra_bytes)
 
     @classmethod
     def from_exposed_api(
@@ -200,11 +200,11 @@ class ScheduledDispatch:
         zone: str,
         guild: int | None,
         user: int | None,
-        extra: Any | None,
+        extra: object | None,
     ) -> Self:
         packed: bytes | None = None
         if extra is not None:
-            f = msgpack.packb(extra, use_list=False, strict_map_key=False)  # type: ignore
+            f = msgpack_encode(extra)
             assert isinstance(f, bytes)
             packed = f
         return cls(uuid4().hex, name, time, zone, guild, user, packed)
@@ -223,9 +223,9 @@ class ScheduledDispatch:
     def get_arrow_time(self: Self) -> arrow.Arrow:
         return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, self.dispatch_zone)
 
-    def unpack_extra(self: Self) -> Any | None:
+    def unpack_extra(self: Self) -> object | None:
         if self.dispatch_extra:
-            return msgpack.unpackb(self.dispatch_extra, use_list=False, strict_map_key=False)  # type: ignore
+            return msgpack_decode(self.dispatch_extra, strict=True)
         return None
 
 
@@ -262,7 +262,7 @@ def _schedule(
     dispatch_zone: str,
     guild_id: int | None,
     user_id: int | None,
-    dispatch_extra: Any | None,
+    dispatch_extra: object | None,
 ) -> str:
     # do this here, so if it fails, it fails at scheduling
     _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, dispatch_zone)
@@ -397,7 +397,7 @@ class Scheduler:
         dispatch_zone: str,
         guild_id: int | None = None,
         user_id: int | None = None,
-        dispatch_extra: Any | None = None,
+        dispatch_extra: object | None = None,
     ) -> str:
         """
         Schedule something to be emitted later.
@@ -423,10 +423,11 @@ class Scheduler:
             Optionally, an associated user_id.
             This can be used with dispatch_name as a means of querying events
             or to drop all scheduled events for a user.
-        dispatch_extra: Any | None
+        dispatch_extra: object | None
             Optionally, Extra data to attach to dispatch.
-            This may be any object serializable by mspack with strict_map_key=False, use_list=False
-            Lists will be converted to tuples
+            This may be any object serializable by msgspec.msgpack.encode
+            where the result is sound-trip decodable with
+            msgspec.msgpack.decode(..., strict=True)
 
         Returns
         -------
