@@ -39,9 +39,12 @@ DATE_FMT = r"%Y-%m-%d %H:%M"
 _c = count()
 
 
-INITIALIZATION_STATEMENTS = """
+PRAGMAS = """
 PRAGMA journal_mode = wal;
 PRAGMA synchronous = NORMAL;
+"""
+
+INITIALIZATION_STATEMENTS = """
 CREATE TABLE IF NOT EXISTS scheduled_dispatches (
     task_id TEXT PRIMARY KEY NOT NULL,
     dispatch_name TEXT NOT NULL,
@@ -227,8 +230,9 @@ class ScheduledDispatch:
 
 
 def _setup_db(conn: apsw.Connection) -> set[str]:
+    cursor = conn.cursor()
+    cursor.execute(PRAGMAS)
     with conn:  # type: ignore # apsw.Connection *does* implement everything needed to be a contextmanager, upstream PR?
-        cursor = conn.cursor()
         cursor.execute(INITIALIZATION_STATEMENTS)
         cursor.execute(ZONE_SELECTION_STATEMENT)
         return set(chain.from_iterable(cursor))
