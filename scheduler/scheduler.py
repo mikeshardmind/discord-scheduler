@@ -293,6 +293,21 @@ def _drop(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) 
         cursor.execute(query_str, params)
 
 
+def resolve_path_with_links(path: Path, folder: bool=False) -> Path:
+    """
+    Python only resolves with strict=True if the path exists.
+    """
+    try:
+        return path.resolve(strict=True)
+    except FileNotFoundError:
+        path = resolve_path_with_links(path.parent, folder=True) / path.name
+        if folder:
+            path.mkdir(mode=0o700)  # python's default is world read/write/traversable... (0o777)
+        else:
+            path.touch(mode=0o600)  # python's default is world read/writable... (0o666)
+        return path.resolve(strict=True)
+
+
 class Scheduler:
     def __init__(self: Self, db_path: Path, granularity: int = 1):
         if granularity < 1:
@@ -300,7 +315,7 @@ class Scheduler:
             raise ValueError(msg)
         asyncio.get_running_loop()
         self.granularity = granularity
-        resolved_path_as_str = str(db_path.resolve(strict=True))
+        resolved_path_as_str = str(resolve_path_with_links(db_path))
         self._connection = apsw.Connection(resolved_path_as_str)
         self._zones: set[str] = set()  # We don't re-narrow this anywhere currently, only expand it.
         self._queue: asyncio.PriorityQueue[ScheduledDispatch] = asyncio.PriorityQueue()
