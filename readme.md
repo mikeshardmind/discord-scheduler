@@ -34,7 +34,7 @@ Probably not, but I'm not ruling out if there's demand.
 
 The time APIs provided are designed to ensure devs handle human timezones correctly.
 I am open to considering changes which keep that intact, but will not be simplifying an API in a
-way that introduces the lilihood of developer misuse or misunderstanding of time.
+way that introduces the liklihood of developer misuse or misunderstanding of time.
 
 
 ## example use?
