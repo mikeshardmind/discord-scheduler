@@ -423,7 +423,7 @@ class Scheduler:
         dispatch_extra: object | None
             Optionally, Extra data to attach to dispatch.
             This may be any object serializable by msgspec.msgpack.encode
-            where the result is sound-trip decodable with
+            where the result is round-trip decodable with
             msgspec.msgpack.decode(..., strict=True)
 
         Returns
