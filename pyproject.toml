@@ -46,9 +46,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "arrow>=1.2.3",
-    "apsw>=3.43.0.0",
-    "msgspec>=0.18.2",
+    "arrow==1.2.3",
+    "apsw==3.43.1.0",
+    "msgspec==0.18.2",
 ]
 
 
