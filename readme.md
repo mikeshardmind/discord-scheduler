@@ -26,6 +26,14 @@ it is designed to be used directly by application code.
 I'll make an attempt to keep the existing APIs stable, but I provide no guarantees of this at this time.
 
 
+## Why a synchronous sqlite backend for async code?
+
+The specific use here shouldn't block the event loop
+even at the scale of some of the largest discord bots.
+
+If you have a case where it does or would like to request an additional backend, open an issue.
+
+
 ## Alternative data backends and serializers?
 
 Probably not, but I'm not ruling out if there's demand.
@@ -43,14 +51,14 @@ TODO: improve this (PRs welcome)
 
 ```py
 
-from scheduler import DiscordBotScheduler as Scheduler, 
+from scheduler import DiscordBotScheduler as Scheduler,
 
 class MyBot(commands.Bot):
 
     def __init__(self, scheduler: Scheduler):
         self.scheduler = scheduler
         super().__init__(intents=...)
-    
+
     async def setup_hook(self):
         self.scheduler.start_dispatch_to_bot(self)
 
@@ -81,16 +89,16 @@ class Reminder(commands.Cog):
         member = guild.get_member(payload.dispatch_user)
         if not member:
             return
-        
+
         channel = guild.get_channel(extra_data["channel_id"])
         if not channel:
             return
-        
+
         await channel.send(
             f"{member.mention} {extra_data["msg"]}",
             allowed_mentions=discord.AllowedMentions(users=member, everyone=False, roles=False),
         )
-    
+
 
     async def create_reminder_for_member(self, channel, member, message, timedelta):
         """

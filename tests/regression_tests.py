@@ -18,19 +18,20 @@ import scheduler
 
 # may split to multiple files if needed, but... meh
 
+
 class PathlibTesting(unittest.TestCase):
     # see: https://github.com/mikeshardmind/discord-scheduler/issues/1
 
     # Testing something which does filesystem access, as a "unit test", yeah yeah...
 
     def test_pathlib_handling(self) -> None:
-        """ Not adding setup and teardown for this """
+        """Not adding setup and teardown for this"""
         path = pathlib.Path.cwd() / uuid.uuid4().hex / "test.file"
         resolved_path = path.resolve()
         self.assertFalse(path.exists(), "path exists somehow")
         with self.assertRaises(FileNotFoundError):
             path.resolve(strict=True)
-        
+
         new_path = scheduler.scheduler.resolve_path_with_links(path)
         self.assertEqual(new_path, resolved_path, f"unexpected result {new_path=} {resolved_path=}")
         parent = path.parent
@@ -39,7 +40,6 @@ class PathlibTesting(unittest.TestCase):
 
 
 class DBSetup(unittest.TestCase):
-
     # https://github.com/mikeshardmind/discord-scheduler/issues/2
 
     def test_db_setup(self) -> None:

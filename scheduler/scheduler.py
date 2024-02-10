@@ -88,7 +88,7 @@ DELETE FROM scheduled_dispatches WHERE dispatch_name = ?;
 
 UNSCHEDULE_ALL_BY_NAME_AND_USER_STATEMENT = """
 DELETE FROM scheduled_dispatches
-WHERE 
+WHERE
     dispatch_name = ?
     AND associated_user IS NOT NULL
     AND associated_user = ?;
@@ -96,7 +96,7 @@ WHERE
 
 UNSCHEDULE_ALL_BY_NAME_AND_GUILD_STATEMENT = """
 DELETE FROM scheduled_dispatches
-WHERE 
+WHERE
     dispatch_name = ?
     AND associated_guild IS NOT NULL
     AND associated_guild = ?;
@@ -119,7 +119,7 @@ SELECT * FROM scheduled_dispatches WHERE dispatch_name = ?;
 
 SELECT_ALL_BY_NAME_AND_GUILD_STATEMET = """
 SELECT * FROM scheduled_dispatches
-WHERE 
+WHERE
     dispatch_name = ?
     AND associated_guild IS NOT NULL
     AND associated_guild = ?;
@@ -127,7 +127,7 @@ WHERE
 
 SELECT_ALL_BY_NAME_AND_USER_STATEMENT = """
 SELECT * FROM scheduled_dispatches
-WHERE 
+WHERE
     dispatch_name = ?
     AND associated_user IS NOT NULL
     AND associated_user = ?;
@@ -166,7 +166,6 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     associated_user: int | None
     dispatch_extra: bytes | None
     _count: int = field(default_factory=lambda: next(_c))
-
 
     def __eq__(self: Self, other: object) -> bool:
         return self is other
@@ -289,7 +288,7 @@ def _drop(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) 
         cursor.execute(query_str, params)
 
 
-def resolve_path_with_links(path: Path, folder: bool=False) -> Path:
+def resolve_path_with_links(path: Path, folder: bool = False) -> Path:
     """
     Python only resolves with strict=True if the path exists.
     """
@@ -338,7 +337,8 @@ class Scheduler:
             # Lock needed to ensure that once the db is dropping rows
             # that a graceful shutdown doesn't drain the queue until entries are in it.
             async with self._lock:
-                # check on both ends of the await that we aren't closing
+                # check again after the potential async context switch that we aren't closing,
+                # we don't want to remove rows from the db anymore if we're closing now
                 if self._closing:
                     return
                 scheduled = _get_scheduled(self._connection, self.granularity, self._zones)

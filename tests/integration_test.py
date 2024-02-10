@@ -20,7 +20,6 @@ from scheduler import ScheduledDispatch
 
 
 class BotLikeThing:
-
     def __init__(self) -> None:
         self.recv: list[ScheduledDispatch] = []
 
@@ -32,7 +31,6 @@ class BotLikeThing:
 
 
 async def amain(path: Path) -> list[str]:
-    
     bot = BotLikeThing()
     async with Scheduler(path, granularity=1) as sched:
         sched.start_dispatch_to_bot(bot)
@@ -43,21 +41,21 @@ async def amain(path: Path) -> list[str]:
             dispatch_name="uuid1",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
         )
 
         uuid2 = await sched.schedule_event(
             dispatch_name="uuid2",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
         )
 
         uuid3 = await sched.schedule_event(
             dispatch_name="uuid3",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
             guild_id=1,
         )
 
@@ -65,7 +63,7 @@ async def amain(path: Path) -> list[str]:
             dispatch_name="uuid4",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
             guild_id=2,
             user_id=4,
         )
@@ -74,7 +72,7 @@ async def amain(path: Path) -> list[str]:
             dispatch_name="uuid5",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
             user_id=3,
         )
 
@@ -82,7 +80,7 @@ async def amain(path: Path) -> list[str]:
             dispatch_name="uuid6",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
             user_id=3,
             guild_id=2,
         )
@@ -91,13 +89,13 @@ async def amain(path: Path) -> list[str]:
             dispatch_name="uuid7",
             dispatch_time=when,
             dispatch_zone="UTC",
-            dispatch_extra={(1,2,3): None},
+            dispatch_extra={(1, 2, 3): None},
             guild_id=7,
             user_id=3,
         )
 
         # expected_uuids: uuid1, uuid5
-        # canceled_uuids: 
+        # canceled_uuids:
         #     uuid2, # directly
         #     uuid3, # guild 1
         #     uuid4, # user 4
@@ -130,14 +128,14 @@ async def amain(path: Path) -> list[str]:
             except Exception as exc:  # noqa: BLE001
                 failures.append(f"Failed to unpack extra got {exc=}")
             else:
-                if extra != {(1,2,3): None}:
+                if extra != {(1, 2, 3): None}:
                     failures.append(f"Unpacking extra did not result in expectations, {extra=}")
-    
+
     if expected:
         failures.append(f"expected tasks did not dispatch {expected=}")
-    
+
     return failures
-    
+
 
 def main() -> None:
     path = Path.cwd() / uuid.uuid4().hex / "db.db"
@@ -151,8 +149,9 @@ def main() -> None:
     if failures:
         print(*failures, file=sys.stderr, sep="\n\n")  # noqa: T201
         sys.exit(1)
-    
+
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
