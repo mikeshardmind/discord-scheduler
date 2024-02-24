@@ -16,10 +16,25 @@ folds are not disambiguated. This is considered acceptable currently but is not 
 
 ## pypi?
 
-This will not be published on pypi. It is suitable as a single file include
-(include just scheduler/scheduler.py) or as an external link
-Other *libraries* should not be built to depend on this as-is,
-it is designed to be used directly by application code.
+This will not be published on pypi. It is currently suitable as a single file include
+(include just scheduler/scheduler.py) or as PEP 508 dependency link (single file include subject to future change if needed)
+Other *libraries* should not be built to depend on this as-is, it is designed to be used directly by application code.
+
+If you build a library which depends on this, please just vendor it and do not upload it to a packaging index on my behalf.
+
+The license is permissive to not prevent redistribution,
+but I do not want to be in the position of handling issues for a means of distribution I'm not intending.
+
+It is set up to be specifiable in project requirements and installable as a wheel
+
+eg.
+```
+scheduler @ https://github.com/mikeshardmind/discord-scheduler/archive/9aa55a61977c3047834c82dde8e06ed39a53843a.zip
+```
+or
+```
+scheduler @ git+https://github.com/mikeshardmind/discord-scheduler@9aa55a61977c3047834c82dde8e06ed39a53843a
+```
 
 # Stability
 
