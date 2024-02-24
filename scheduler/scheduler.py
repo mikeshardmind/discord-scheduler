@@ -24,7 +24,7 @@ from msgspec import Struct, field
 from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
 
-apsw.bestpractice.apply(apsw.bestpractice.recommended)  # type: ignore
+apsw.bestpractice.apply(apsw.bestpractice.recommended)  # pyright: ignore[reportUnknownMemberType]
 
 
 class BotLike(Protocol):
@@ -198,11 +198,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         user: int | None,
         extra: object | None,
     ) -> Self:
-        packed: bytes | None = None
-        if extra is not None:
-            f = msgpack_encode(extra)
-            assert isinstance(f, bytes)
-            packed = f
+        packed = None if extra is None else msgpack_encode(extra)
         return cls(uuid4().hex, name, time, zone, guild, user, packed)
 
     def to_sqlite_row(self: Self) -> SQLROW_TYPE:
@@ -220,7 +216,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, self.dispatch_zone)
 
     def unpack_extra(self: Self) -> object | None:
-        if self.dispatch_extra:
+        if self.dispatch_extra is not None:
             return msgpack_decode(self.dispatch_extra, strict=True)
         return None
 
@@ -239,7 +235,7 @@ def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> 
         return ret
 
     cutoff = arrow.utcnow() + timedelta(minutes=granularity)
-    with conn:  # type: ignore # apsw.Connection *does* implement everything needed to be a contextmanager, upstream PR?
+    with conn:
         cursor = conn.cursor()
         for zone in zones:
             local_time = cutoff.to(zone).strftime(DATE_FMT)
@@ -270,7 +266,7 @@ def _schedule(
         extra=dispatch_extra,
     )
 
-    with conn:  # type: ignore # apsw.Connection *does* implement everything needed to be a contextmanager, upstream PR?
+    with conn:
         cursor = conn.cursor()
         cursor.execute(INSERT_SCHEDULE_STATEMENT, obj.to_sqlite_row())
 
@@ -283,7 +279,7 @@ def _query(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...])
 
 
 def _drop(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) -> None:
-    with conn:  # type: ignore # apsw.Connection *does* implement everything needed to be a contextmanager, upstream PR?
+    with conn:
         cursor = conn.cursor()
         cursor.execute(query_str, params)
 
@@ -568,6 +564,10 @@ class Scheduler:
 class DiscordBotScheduler(Scheduler):
     """Scheduler with convienence dispatches compatible with discord.py's commands extenstion
     Note: long-term compatability not guaranteed, dispatch isn't covered by discord.py's version guarantees.
+
+    The method for initiating dispatch is typed in a way that
+    attempts to ensure that if it becomes incompatible due to changes to discord.py's dispatch system,
+    you get a notice of it statically.
     """
 
     async def _bot_dispatch_loop(self: Self, bot: BotLike, wait_until_ready: bool) -> None:
