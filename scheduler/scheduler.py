@@ -18,14 +18,13 @@ from uuid import uuid4
 from warnings import warn
 
 import apsw
-import apsw.bestpractice
 import arrow
+from apsw.bestpractice import library_logging as apsw_lib_logging
 from msgspec import Struct, field
 from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
 
-apsw.bestpractice.apply(apsw.bestpractice.recommended)  # pyright: ignore[reportUnknownMemberType]
-
+apsw_lib_logging()
 
 class BotLike(Protocol):
     def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
@@ -307,7 +306,12 @@ class Scheduler:
         asyncio.get_running_loop()
         self.granularity = granularity
         resolved_path_as_str = str(resolve_path_with_links(db_path))
-        self._connection = apsw.Connection(resolved_path_as_str)
+        self._connection = conn = apsw.Connection(resolved_path_as_str)
+        conn.pragma("journal_mode", "wal")
+        conn.set_busy_timeout(100)
+        conn.pragma("foreign_keys", "ON")
+        conn.config(apsw.SQLITE_DBCONFIG_DQS_DML, 0)
+        conn.config(apsw.SQLITE_DBCONFIG_DQS_DDL, 0)
         self._zones: set[str] = set()  # We don't re-narrow this anywhere currently, only expand it.
         self._queue: asyncio.PriorityQueue[ScheduledDispatch] = asyncio.PriorityQueue()
         self._ready = False
