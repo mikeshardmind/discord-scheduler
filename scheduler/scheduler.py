@@ -9,22 +9,25 @@ Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 from __future__ import annotations
 
 import asyncio
+import random
+import time
+from collections.abc import Callable
 from datetime import timedelta
-from itertools import chain, count
+from itertools import chain
 from pathlib import Path
 from types import TracebackType
 from typing import Protocol, Self
-from uuid import uuid4
 from warnings import warn
 
 import apsw
 import arrow
 from apsw.bestpractice import library_logging as apsw_lib_logging
-from msgspec import Struct, field
+from msgspec import Struct
 from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
 
 apsw_lib_logging()
+
 
 class BotLike(Protocol):
     def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
@@ -34,12 +37,52 @@ class BotLike(Protocol):
         ...
 
 
+def uuid7gen() -> Callable[[], str]:
+    """UUIDv7 is *not* accepted as a standard at this point in time (though is on track to be)
+    public use of this should not refer to it as a uuid and only as a unique identifier."""
+    _last_timestamp: int | None = None
+
+    def uuid7() -> str:
+        """Instructions here are kept step by step matching the current uuid7 draft
+        at time of writing: 2024-02-27.
+        If the draft is accepted with no techncial changes, this
+        can later be advertised as having been providing valid uuids.
+
+        This was chosen to increase performance of indexing and
+        to pick something likely to get specific database support
+        for this to be a portably efficient choice should someone
+        decide to have this be backed by something other than sqlite
+        """
+        nonlocal _last_timestamp
+        nanoseconds = time.time_ns()
+        if _last_timestamp is not None and nanoseconds <= _last_timestamp:
+            nanoseconds = _last_timestamp + 1
+        _last_timestamp = nanoseconds
+        timestamp_s, timestamp_ns = divmod(nanoseconds, 10**9)
+        subsec_a = timestamp_ns >> 18
+        subsec_b = (timestamp_ns >> 6) & 0x0FFF
+        subsec_seq_node = (timestamp_ns & 0x3F) << 56
+        subsec_seq_node += random.SystemRandom().getrandbits(56)
+        uuid_int = (timestamp_s & 0x0FFFFFFFFF) << 92
+        uuid_int += subsec_a << 80
+        uuid_int += subsec_b << 64
+        uuid_int += subsec_seq_node
+        uuid_int &= ~(0xC000 << 48)
+        uuid_int |= 0x8000 << 48
+        uuid_int &= ~(0xF000 << 64)
+        uuid_int |= 7 << 76
+        return "%032x" % uuid_int
+
+    return uuid7
+
+
+uuid7 = uuid7gen()
+
+
 __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
 
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
-
-_c = count()
 
 INITIALIZATION_STATEMENTS = """
 CREATE TABLE IF NOT EXISTS scheduled_dispatches (
@@ -164,21 +207,17 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     associated_guild: int | None
     associated_user: int | None
     dispatch_extra: bytes | None
-    _count: int = field(default_factory=lambda: next(_c))
-
-    def __eq__(self: Self, other: object) -> bool:
-        return self is other
 
     def __lt__(self: Self, other: object) -> bool:
         if type(self) is type(other):
             assert isinstance(other, ScheduledDispatch)
-            return (self.get_arrow_time(), self._count) < (other.get_arrow_time(), other._count)
+            return (self.get_arrow_time(), self.task_id) < (other.get_arrow_time(), other.task_id)
         return False
 
     def __gt__(self: Self, other: object) -> bool:
         if type(self) is type(other):
             assert isinstance(other, ScheduledDispatch)
-            return (self.get_arrow_time(), self._count) > (other.get_arrow_time(), other._count)
+            return (self.get_arrow_time(), self.task_id) > (other.get_arrow_time(), other.task_id)
         return False
 
     @classmethod
@@ -198,7 +237,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         extra: object | None,
     ) -> Self:
         packed = None if extra is None else msgpack_encode(extra)
-        return cls(uuid4().hex, name, time, zone, guild, user, packed)
+        return cls(uuid7(), name, time, zone, guild, user, packed)
 
     def to_sqlite_row(self: Self) -> SQLROW_TYPE:
         return (
@@ -308,6 +347,8 @@ class Scheduler:
         resolved_path_as_str = str(resolve_path_with_links(db_path))
         self._connection = conn = apsw.Connection(resolved_path_as_str)
         conn.pragma("journal_mode", "wal")
+        # May set this lower in future, corresponds with asyncio's default debug ms
+        # But is significantly higher than expected for this usage pattern.
         conn.set_busy_timeout(100)
         conn.pragma("foreign_keys", "ON")
         conn.config(apsw.SQLITE_DBCONFIG_DQS_DML, 0)
