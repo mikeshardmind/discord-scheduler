@@ -84,6 +84,8 @@ __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
 
+# There's a slight overhead of using TEXT here for a uuid.
+# It's not that much, but it's worth considering a migration strategy later
 INITIALIZATION_STATEMENTS = """
 CREATE TABLE IF NOT EXISTS scheduled_dispatches (
     task_id TEXT PRIMARY KEY NOT NULL,
