@@ -340,7 +340,7 @@ def resolve_path_with_links(path: Path, folder: bool = False) -> Path:
 
 
 class Scheduler:
-    def __init__(self: Self, db_path: Path, granularity: int = 1):
+    def __init__(self, db_path: Path, granularity: int = 1):
         if granularity < 1:
             msg = "Granularity must be a positive iteger number of minutes"
             raise ValueError(msg)
