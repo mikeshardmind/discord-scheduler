@@ -37,21 +37,31 @@ class BotLike(Protocol):
         ...
 
 
-def uuid7gen() -> Callable[[], str]:
-    """UUIDv7 is *not* accepted as a standard at this point in time (though is on track to be)
-    public use of this should not refer to it as a uuid and only as a unique identifier."""
+def _uuid7gen() -> Callable[[], str]:
+    """UUIDv7 has been accepted as part of rfc9562
+
+    This is intended to be a compliant implementation, but I am not advertising it
+    in public, exported APIs as such *yet*
+
+    In particular, this is:
+    UUIDv7 as described in rfc9562 section 5.7 utilizing the
+    optional sub-millisecond timestamp fraction described in section 6.2 method 3
+    """
     _last_timestamp: int | None = None
 
     def uuid7() -> str:
-        """Instructions here are kept step by step matching the current uuid7 draft
-        at time of writing: 2024-02-27.
-        If the draft is accepted with no techncial changes, this
-        can later be advertised as having been providing valid uuids.
+        """This is unique identifer generator
 
         This was chosen to increase performance of indexing and
         to pick something likely to get specific database support
         for this to be a portably efficient choice should someone
         decide to have this be backed by something other than sqlite
+
+        This should not be relied on as always generating valid UUIDs of
+        any version or variant at this time. The current intent is that
+        this is a UUIDv7 in str form, but this should not be relied
+        on outside of this library and may be changed in the future for
+        better performance within this library.
         """
         nonlocal _last_timestamp
         nanoseconds = time.time_ns()
@@ -76,7 +86,7 @@ def uuid7gen() -> Callable[[], str]:
     return uuid7
 
 
-uuid7 = uuid7gen()
+_uuid7 = _uuid7gen()
 
 
 __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
@@ -239,7 +249,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         extra: object | None,
     ) -> Self:
         packed = None if extra is None else msgpack_encode(extra)
-        return cls(uuid7(), name, time, zone, guild, user, packed)
+        return cls(_uuid7(), name, time, zone, guild, user, packed)
 
     def to_sqlite_row(self: Self) -> SQLROW_TYPE:
         return (
@@ -472,7 +482,9 @@ class Scheduler:
         Returns
         -------
         str
-            A uuid for the task, used for unique cancelation.
+            A unique id for the task, usable for cancelation.
+            This is a uuid-like string, but is not guaranteed to be compatible
+            with the RFCs describing UUIDs
         """
         self._zones.add(dispatch_zone)
         return _schedule(
@@ -487,7 +499,7 @@ class Scheduler:
 
     async def unschedule_uuid(self: Self, uuid: str) -> None:
         """
-        Unschedule something by uuid.
+        Unschedule something by unqiue id.
         This may miss things which should run within the next interval as defined by `granularity`
         Non-existent uuids are silently handled.
         """
