@@ -28,6 +28,14 @@ unfixable = [
     "ERA"  # I don't want anything erroneously detected deleted by this.
 ]
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# https://discuss.python.org/t/problems-with-typeis/55410/6
+# Until what can go into a TypeIs/TypeGuard changes, these are just dangerous.
+"typing.TypeIs".msg = "TypeIs is fundamentally unsafe in a language with mutable heterogenous containers"
+"typing.TypeGuard".msg = "TypeGuard is fundamentally unsafe"
+"typing_extensions.TypeIs".msg = "TypeIs is fundamentally unsafe in a language with mutable heterogenous containers"
+"typing_extensions.TypeGuard".msg = "TypeGuard is fundamentally unsafe"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
