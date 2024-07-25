@@ -1,7 +1,7 @@
 [tool.ruff]
 
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -46,7 +46,7 @@ name = "scheduler"
 description = "an easy scheduler for discord.py"
 readme = "README.md"
 license = "MPL-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "Michael Hall", email = "michael@michaelhall.tech" }]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -54,7 +54,8 @@ classifiers = [
     "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Operating System :: OS Independent",
     "Typing :: Typed",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
@@ -85,7 +86,7 @@ include = ["/scheduler/*"]
 [tool.pyright]
 include = ["scheduler"]
 typeCheckingMode = "strict"
-pythonVersion = "3.11"
+pythonVersion = "3.12"
 pythonPlatform = "All"
 reportCallInDefaultInitializer = "warning"
 reportImplicitOverride = "warning"

@@ -16,7 +16,7 @@ from datetime import timedelta
 from itertools import chain
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self
+from typing import Protocol, Self, TypeVar
 from warnings import warn
 
 import apsw
@@ -28,6 +28,7 @@ from msgspec.msgpack import encode as msgpack_encode
 
 apsw_lib_logging()
 
+T = TypeVar("T")
 
 class BotLike(Protocol):
     def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
@@ -244,9 +245,9 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         name: str,
         time: str,
         zone: str,
-        guild: int | None,
-        user: int | None,
-        extra: object | None,
+        guild: int | None = None,
+        user: int | None = None,
+        extra: object | None = None,
     ) -> Self:
         packed = None if extra is None else msgpack_encode(extra)
         return cls(_uuid7(), name, time, zone, guild, user, packed)
@@ -265,9 +266,12 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     def get_arrow_time(self: Self) -> arrow.Arrow:
         return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, self.dispatch_zone)
 
-    def unpack_extra(self: Self) -> object | None:
+    def unpack_extra(self: Self, typ: type[T] = object) -> T | None:
+        """If a type is provided, attempt to deserialize to this type via msgspec"""
         if self.dispatch_extra is not None:
-            return msgpack_decode(self.dispatch_extra, strict=True)
+            if typ is object:
+                return msgpack_decode(self.dispatch_extra, strict=True)
+            return msgpack_decode(self.dispatch_extra, strict=True, type=typ)
         return None
 
 
