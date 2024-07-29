@@ -417,6 +417,7 @@ class Scheduler:
         """
         gets the next scheduled event, waiting if neccessary.
         """
+        dispatch: ScheduledDispatch | None = None
         try:
             dispatch = await self._queue.get()
             now = arrow.utcnow()
@@ -426,7 +427,8 @@ class Scheduler:
                 await asyncio.sleep(delay)
             return dispatch
         finally:
-            self._queue.task_done()
+            if dispatch is not None:
+                self._queue.task_done()
 
     async def stop_gracefully(self: Self) -> None:
         """Notify the internal scheduling loop to stop scheduling and wait for the internal queue to be empty"""
