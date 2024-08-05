@@ -21,6 +21,7 @@ from warnings import warn
 
 import apsw
 import arrow
+import pytz
 from apsw.bestpractice import library_logging as apsw_lib_logging
 from msgspec import Struct
 from msgspec.msgpack import decode as msgpack_decode
@@ -264,7 +265,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         )
 
     def get_arrow_time(self: Self) -> arrow.Arrow:
-        return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, self.dispatch_zone)
+        return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, pytz.timezone(self.dispatch_zone))
 
     def unpack_extra(self: Self, typ: type[T] = object) -> T | None:
         """If a type is provided, attempt to deserialize to this type via msgspec"""
@@ -292,7 +293,7 @@ def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> 
     with conn:
         cursor = conn.cursor()
         for zone in zones:
-            local_time = cutoff.to(zone).strftime(DATE_FMT)
+            local_time = cutoff.to(pytz.timezone(zone)).strftime(DATE_FMT)
             cursor.execute(DELETE_RETURNING_UPCOMING_IN_ZONE_STATEMENT, (local_time, zone))
             ret.extend(map(ScheduledDispatch.from_sqlite_row, cursor))
 
@@ -310,7 +311,8 @@ def _schedule(
     dispatch_extra: object | None,
 ) -> str:
     # do this here, so if it fails, it fails at scheduling
-    _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, dispatch_zone)
+    zone = pytz.timezone(dispatch_zone)
+    _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, zone)
     obj = ScheduledDispatch.from_exposed_api(
         name=dispatch_name,
         time=dispatch_time,
