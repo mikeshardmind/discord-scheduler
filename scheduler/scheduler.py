@@ -360,7 +360,6 @@ class Scheduler:
         if granularity < 1:
             msg = "Granularity must be a positive iteger number of minutes"
             raise ValueError(msg)
-        asyncio.get_running_loop()
         self.granularity = granularity
         resolved_path_as_str = str(resolve_path_with_links(db_path))
         self._connection = conn = apsw.Connection(resolved_path_as_str)

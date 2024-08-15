@@ -9,4 +9,4 @@ Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 from .scheduler import DiscordBotScheduler, ScheduledDispatch, Scheduler
 
 __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
-__version__ = "2024.08.05"
+__version__ = "2024.08.15"
