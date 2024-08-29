@@ -20,14 +20,12 @@ from typing import Protocol, Self, TypeVar
 from warnings import warn
 
 import apsw
+import apsw.ext
 import arrow
 import pytz
-from apsw.bestpractice import library_logging as apsw_lib_logging
 from msgspec import Struct
 from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
-
-apsw_lib_logging()
 
 T = TypeVar("T")
 
