@@ -16,7 +16,7 @@ from datetime import timedelta
 from itertools import chain
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self, TypeVar
+from typing import Protocol, Self, TypeVar, override
 from warnings import warn
 
 import apsw
@@ -29,12 +29,11 @@ from msgspec.msgpack import encode as msgpack_encode
 
 T = TypeVar("T")
 
-class BotLike(Protocol):
-    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
-        ...
 
-    async def wait_until_ready(self: Self) -> None:
-        ...
+class BotLike(Protocol):
+    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None: ...
+
+    async def wait_until_ready(self: Self) -> None: ...
 
 
 def _uuid7gen() -> Callable[[], str]:
@@ -89,7 +88,7 @@ def _uuid7gen() -> Callable[[], str]:
 _uuid7 = _uuid7gen()
 
 
-__all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
+__all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler", "UTCOnlyScheduler", "UTCOnlyDiscorBotScheduler"]
 
 SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
@@ -210,6 +209,13 @@ WHERE dispatch_time < ? AND dispatch_zone = ?
 RETURNING *;
 """
 
+SELECT_NEXT_UTC = """
+SELECT dispatch_time FROM scheduled_dispatches
+WHERE dispatch_zone = 'UTC'
+ORDER BY dispatch_time ASC
+LIMIT 1
+"""
+
 
 class ScheduledDispatch(Struct, frozen=True, gc=False):
     task_id: str
@@ -298,28 +304,23 @@ def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> 
     return ret
 
 
-def _schedule(
-    conn: apsw.Connection,
-    *,
-    dispatch_name: str,
-    dispatch_time: str,
-    dispatch_zone: str,
-    guild_id: int | None,
-    user_id: int | None,
-    dispatch_extra: object | None,
-) -> str:
-    # do this here, so if it fails, it fails at scheduling
-    zone = pytz.timezone(dispatch_zone)
-    _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, zone)
-    obj = ScheduledDispatch.from_exposed_api(
-        name=dispatch_name,
-        time=dispatch_time,
-        zone=dispatch_zone,
-        guild=guild_id,
-        user=user_id,
-        extra=dispatch_extra,
-    )
+def _get_utc_efficient(
+    conn: apsw.Connection, granularity: int
+) -> tuple[arrow.Arrow, arrow.Arrow, list[ScheduledDispatch]]:
+    cutoff = arrow.utcnow() + timedelta(minutes=granularity)
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(DELETE_RETURNING_UPCOMING_IN_ZONE_STATEMENT, (cutoff.strftime(DATE_FMT), "UTC"))
+        items = list(map(ScheduledDispatch.from_sqlite_row, cursor))
+        gran_next = next_time = cutoff + timedelta(minutes=granularity)
+        row = cursor.execute(SELECT_NEXT_UTC).fetchone()
+        if row:
+            next_time = max(next_time, arrow.Arrow.strptime(row[0], DATE_FMT, "UTC"))
 
+    return gran_next, next_time, items
+
+
+def _schedule(conn: apsw.Connection, obj: ScheduledDispatch, /) -> str:
     with conn:
         cursor = conn.cursor()
         cursor.execute(INSERT_SCHEDULE_STATEMENT, obj.to_sqlite_row())
@@ -491,16 +492,20 @@ class Scheduler:
             This is a uuid-like string, but is not guaranteed to be compatible
             with the RFCs describing UUIDs
         """
-        self._zones.add(dispatch_zone)
-        return _schedule(
-            self._connection,
-            dispatch_name=dispatch_name,
-            dispatch_time=dispatch_time,
-            dispatch_zone=dispatch_zone,
-            guild_id=guild_id,
-            user_id=user_id,
-            dispatch_extra=dispatch_extra,
+
+        zone = pytz.timezone(dispatch_zone)
+        _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, zone)
+        obj = ScheduledDispatch.from_exposed_api(
+            name=dispatch_name,
+            time=dispatch_time,
+            zone=dispatch_zone,
+            guild=guild_id,
+            user=user_id,
+            extra=dispatch_extra,
         )
+        self._zones.add(dispatch_zone)
+
+        return _schedule(self._connection, obj)
 
     async def unschedule_uuid(self: Self, uuid: str) -> None:
         """
@@ -625,6 +630,104 @@ class Scheduler:
         return arrow.Arrow(year, month, day, hour, minute).strftime(DATE_FMT)
 
 
+class UTCOnlyScheduler(Scheduler):
+    """A Scheduler that only supports UTC. This should not be used for user facing time handling, but
+    is more efficient for machine scheduled times.
+
+    You should not use the same db path for this and a regular scheuduler simultaneously as this
+    will result in double firing UTC time events.
+    """
+
+    def __init__(self, db_path: Path, granularity: int = 1):
+        super().__init__(db_path, granularity)
+        self._gran_nx: arrow.Arrow | None = None
+        self._lst: arrow.Arrow | None = None
+
+    @override
+    async def schedule_event(
+        self: Self,
+        *,
+        dispatch_name: str,
+        dispatch_time: str,
+        dispatch_zone: str = "UTC",
+        guild_id: int | None = None,
+        user_id: int | None = None,
+        dispatch_extra: object | None = None,
+    ) -> str:
+        """
+        Schedule something to be emitted later.
+
+        Parameters
+        ----------
+        dispatch_name: str
+            The event name to dispatch under.
+            You may drop all events dispatching to the same name
+            (such as when removing a feature built ontop of this)
+        dispatch_time: str
+            A time string matching the format "%Y-%m-%d %H:%M" (eg. "2023-01-23 13:15")
+        dispatch_zone: str
+            This MUST be (andd defaults to) "UTC"
+        guild_id: int | None
+            Optionally, an associated guild_id.
+            This can be used with dispatch_name as a means of querying events
+            or to drop all scheduled events for a guild.
+        user_id: int | None
+            Optionally, an associated user_id.
+            This can be used with dispatch_name as a means of querying events
+            or to drop all scheduled events for a user.
+        dispatch_extra: object | None
+            Optionally, Extra data to attach to dispatch.
+            This may be any object serializable by msgspec.msgpack.encode
+            where the result is round-trip decodable with
+            msgspec.msgpack.decode(..., strict=True)
+
+        Returns
+        -------
+        str
+            A unique id for the task, usable for cancelation.
+            This is a uuid-like string, but is not guaranteed to be compatible
+            with the RFCs describing UUIDs
+        """
+
+        if dispatch_zone.upper() != "UTC":
+            msg = f"{type(self):!r} only supports UTC"
+            raise RuntimeError(msg)
+
+        zone = pytz.timezone(dispatch_zone)
+        _time = arrow.Arrow.strptime(dispatch_time, DATE_FMT, zone)
+        obj = ScheduledDispatch.from_exposed_api(
+            name=dispatch_name,
+            time=dispatch_time,
+            zone=dispatch_zone,
+            guild=guild_id,
+            user=user_id,
+            extra=dispatch_extra,
+        )
+
+        if self._lst and _time < self._lst and _time < self._gran_nx:
+            await self._queue.put(obj)
+            return obj.task_id
+
+        return _schedule(self._connection, obj)
+
+    @override
+    async def _loop(self: Self) -> None:
+        sleep_gran = 0
+        while (not self._closing) and await asyncio.sleep(sleep_gran, self._ready):
+            # Lock needed to ensure that once the db is dropping rows
+            # that a graceful shutdown doesn't drain the queue until entries are in it.
+            async with self._lock:
+                # check again after the potential async context switch that we aren't closing,
+                # we don't want to remove rows from the db anymore if we're closing now
+                if self._closing:
+                    return
+                # scheudule based on next upcoming
+                self._gran_nx, self._lst, scheduled = _get_utc_efficient(self._connection, self.granularity)
+                sleep_gran = (self._lst - arrow.utcnow()).total_seconds()
+                for s in scheduled:
+                    await self._queue.put(s)
+
+
 class DiscordBotScheduler(Scheduler):
     """Scheduler with convienence dispatches compatible with discord.py's commands extenstion
     Note: long-term compatability not guaranteed, dispatch isn't covered by discord.py's version guarantees.
@@ -674,3 +777,7 @@ class DiscordBotScheduler(Scheduler):
 
         self._discord_task = asyncio.create_task(self._bot_dispatch_loop(bot, wait_until_ready))
         self._discord_task.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+
+
+class UTCOnlyDiscorBotScheduler(UTCOnlyScheduler, DiscordBotScheduler):
+    """See documentation for ``DiscordBotScheduler`` and ``UTCOnlyScheduler``"""
