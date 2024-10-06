@@ -9,6 +9,7 @@ Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 from __future__ import annotations
 
 import asyncio
+import enum
 import random
 import time
 from collections.abc import Callable
@@ -16,7 +17,7 @@ from datetime import timedelta
 from itertools import chain
 from pathlib import Path
 from types import TracebackType
-from typing import Protocol, Self, TypeVar
+from typing import Literal, Protocol, Self, TypeVar
 from warnings import warn
 
 import apsw
@@ -28,6 +29,16 @@ from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
 
 T = TypeVar("T")
+
+class _Internal(enum.Enum):
+    NoValue = enum.auto()
+    def __bool__(self):
+        return False
+
+NoValue = _Internal.NoValue
+
+type Maybe[T] = T | Literal[_Internal.NoValue]
+
 
 class BotLike(Protocol):
     def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
@@ -246,9 +257,9 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         zone: str,
         guild: int | None = None,
         user: int | None = None,
-        extra: object | None = None,
+        extra: object = NoValue,
     ) -> Self:
-        packed = None if extra is None else msgpack_encode(extra)
+        packed = None if extra is NoValue else msgpack_encode(extra)
         return cls(_uuid7(), name, time, zone, guild, user, packed)
 
     def to_sqlite_row(self: Self) -> SQLROW_TYPE:
@@ -265,13 +276,13 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     def get_arrow_time(self: Self) -> arrow.Arrow:
         return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, pytz.timezone(self.dispatch_zone))
 
-    def unpack_extra(self: Self, typ: type[T] = object) -> T | None:
+    def unpack_extra(self: Self, typ: type[T] = object) -> Maybe[T]:
         """If a type is provided, attempt to deserialize to this type via msgspec"""
         if self.dispatch_extra is not None:
             if typ is object:
                 return msgpack_decode(self.dispatch_extra, strict=True)
             return msgpack_decode(self.dispatch_extra, strict=True, type=typ)
-        return None
+        return _Internal.NoValue
 
 
 def _setup_db(conn: apsw.Connection) -> set[str]:
@@ -306,7 +317,7 @@ def _schedule(
     dispatch_zone: str,
     guild_id: int | None,
     user_id: int | None,
-    dispatch_extra: object | None,
+    dispatch_extra: object,
 ) -> str:
     # do this here, so if it fails, it fails at scheduling
     zone = pytz.timezone(dispatch_zone)
@@ -452,7 +463,7 @@ class Scheduler:
         dispatch_zone: str,
         guild_id: int | None = None,
         user_id: int | None = None,
-        dispatch_extra: object | None = None,
+        dispatch_extra: object = NoValue,
     ) -> str:
         """
         Schedule something to be emitted later.
