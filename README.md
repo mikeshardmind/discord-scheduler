@@ -139,6 +139,16 @@ class Reminder(commands.Cog):
 
 ```
 
+## dispatch_extra
+
+dispatch_extra optionally stores data that can be encoded to msgpack by msgspec.
+This includes user defined msgspec structs.
+
+ScheduledEvent.unpack_extra specifically returns NoValue, rather than None in the case of no data here
+to distinguish from a lack of data and a user choosing to store None.
+
+This is slightly more cautious that strictly neccessary, as users should know if
+they store extra data or not[^1], this is part of[^2] why unpack_extra isn't done automatically
 
 
 ## Docs?
@@ -149,3 +159,15 @@ docstrings provide accurate info, and parameter names and types are consise and 
 ## Help?
 
 Open an issue here if you need it.
+
+
+### Footnotes
+
+[^1]: Prior versions did not, but recent discussions have shown that many python developers
+are not considering where or how they recieve None or valid program states. This should
+help identify logical issues specifically for those developers when calling unpack_extra
+without considering if they should first.
+
+[^2]: The other reasons here were to: Not call unpack and parsing code when data isn't needed
+(allowing applications to not pay for unpacking it if they hit a case that doesn't need it)
+and so that users have type safety for arbitrary storable data (The interface accepts a type to parse into)
