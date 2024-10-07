@@ -35,8 +35,11 @@ class _Internal(enum.Enum):
     def __bool__(self):
         return False
 
+#: Used as a Sentinel to mark a value absence seperately from user-provided None
+#: You should not provide this value manually, but may recieve it where documented.
 NoValue = _Internal.NoValue
 
+#: T, or the library specific NoValue sentinel value.
 type Maybe[T] = T | Literal[_Internal.NoValue]
 
 
