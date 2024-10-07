@@ -4,7 +4,7 @@ A persistent scheduling implementation suitable for use with discord.py
 
 ## Minimum python
 
-3.11
+3.12
 
 ## Implementation details
 
@@ -47,6 +47,8 @@ The specific use here shouldn't block the event loop
 even at the scale of some of the largest discord bots.
 
 If you have a case where it does or would like to request an additional backend, open an issue.
+
+(There are also reasons related to specific durability gurantees which I have not yet documented, but intend to make)
 
 
 ## Alternative data backends and serializers?
