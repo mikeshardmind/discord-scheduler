@@ -47,11 +47,9 @@ type Maybe[T] = T | Literal[_Internal.NoValue]
 
 
 class BotLike(Protocol):
-    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
-        ...
+    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None: ...
 
-    async def wait_until_ready(self: Self) -> None:
-        ...
+    async def wait_until_ready(self: Self) -> None: ...
 
 
 def _uuid7gen() -> Callable[[], str]:
@@ -274,7 +272,8 @@ SELECT
     dispatch_zone,
     associated_guild,
     associated_user,
-    dispatch_extra
+    dispatch_extra,
+    fetched
 FROM scheduled_dispatches
 WHERE fetched = TRUE;
 """
@@ -288,6 +287,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     associated_guild: int | None
     associated_user: int | None
     dispatch_extra: bytes | None
+    fetched: bool = False
 
     def __lt__(self: Self, other: object) -> bool:
         if type(self) is type(other):
@@ -720,7 +720,7 @@ class DiscordBotScheduler(Scheduler):
     you get a notice of it statically.
     """
 
-    async def _bot_dispatch_loop(self: Self, bot: BotLike, wait_until_ready: bool) -> None:
+    async def _bot_dispatch_loop(self: Self, bot: BotLike, wait_until_ready: bool, redispatch_fetched: bool) -> None:
         if not self._ready:
             msg = "context manager, use it"
             raise RuntimeError(msg)
@@ -728,10 +728,20 @@ class DiscordBotScheduler(Scheduler):
         if wait_until_ready:
             await bot.wait_until_ready()
 
+        if redispatch_fetched:
+            for scheduled in await self.get_previously_fetched():
+                bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
+
         while scheduled := await self.get_next():
             bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
 
-    def start_dispatch_to_bot(self: Self, bot: BotLike, *, wait_until_ready: bool = True) -> None:
+    def start_dispatch_to_bot(
+        self: Self,
+        bot: BotLike,
+        *,
+        wait_until_ready: bool = True,
+        redispatch_fetched_first: bool = False,
+    ) -> None:
         """
         Starts dispatching events to the bot.
 
@@ -753,10 +763,13 @@ class DiscordBotScheduler(Scheduler):
             ...
 
         Events will not start being sent until the bot is considered ready if `wait_until_ready` is True
+        If `redispatch_fetched_once` is True (defaults False) will redispatch the items which have
+        been fetched but not marked with task_done once before fetching others.
         """
         if not self._ready:
             msg = "context manager, use it"
             raise RuntimeError(msg)
 
-        self._discord_task = asyncio.create_task(self._bot_dispatch_loop(bot, wait_until_ready))
+        coro = self._bot_dispatch_loop(bot, wait_until_ready, redispatch_fetched_first)
+        self._discord_task = asyncio.create_task(coro)
         self._discord_task.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
