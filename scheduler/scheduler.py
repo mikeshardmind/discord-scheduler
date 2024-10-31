@@ -431,7 +431,7 @@ def resolve_path_with_links(path: Path, folder: bool = False) -> Path:
 
 
 class Scheduler:
-    def __init__(self, db_path: Path, granularity: int = 1):
+    def __init__(self, db_path: Path, granularity: int = 1, use_threads: bool = False):
         if granularity < 1:
             msg = "Granularity must be a positive iteger number of minutes"
             raise ValueError(msg)
@@ -452,6 +452,7 @@ class Scheduler:
         self._lock = asyncio.Lock()
         self._loop_task: asyncio.Task[None] | None = None
         self._discord_task: asyncio.Task[None] | None = None
+        self._use_threads: bool = use_threads
 
     def stop(self: Self) -> None:
         if self._loop_task is None:
@@ -460,6 +461,13 @@ class Scheduler:
         self._loop_task.cancel()
         if self._discord_task:
             self._discord_task.cancel()
+
+    async def _get_scheduled(self) -> list[ScheduledDispatch]:
+        f = _get_scheduled
+        args = (self._connection, self.granularity, self._zones)
+        if self._use_threads:
+            return await asyncio.to_thread(f, *args)
+        return f(*args)
 
     async def _loop(self: Self) -> None:
         # not currently modifiable once running
@@ -475,7 +483,7 @@ class Scheduler:
                 # we don't want to remove rows from the db anymore if we're closing now
                 if self._closing:
                     return
-                scheduled = _get_scheduled(self._connection, self.granularity, self._zones)
+                scheduled = await self._get_scheduled()
                 for s in scheduled:
                     await self._queue.put(s)
                 if next(should_optimize):
@@ -517,7 +525,10 @@ class Scheduler:
 
     async def task_done(self: Self, obj: ScheduledDispatch, /) -> None:
         """Mark a scheduled dispatch as having been done, removing it from the backing store"""
-        _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
+        if self._use_threads:
+            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
+        else:
+            _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
 
     async def stop_gracefully(self: Self) -> None:
         """Notify the internal scheduling loop to stop scheduling and wait for the internal queue to be empty"""
@@ -582,6 +593,18 @@ class Scheduler:
             with the RFCs describing UUIDs
         """
         self._zones.add(dispatch_zone)
+        if self._use_threads:
+            return await asyncio.to_thread(
+                _schedule,
+                self._connection,
+                dispatch_name=dispatch_name,
+                dispatch_time=dispatch_time,
+                dispatch_zone=dispatch_zone,
+                guild_id=guild_id,
+                user_id=user_id,
+                dispatch_extra=dispatch_extra,
+            )
+
         return _schedule(
             self._connection,
             dispatch_name=dispatch_name,
@@ -598,7 +621,10 @@ class Scheduler:
         This may miss things which should run within the next interval as defined by `granularity`
         Non-existent uuids are silently handled.
         """
-        _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,))
+        if self._use_threads:
+            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,))
+        else:
+            _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,))
 
     async def drop_user_schedule(self: Self, user_id: int) -> None:
         """
@@ -607,7 +633,10 @@ class Scheduler:
         Intended use case:
             removing everything associated to a user who asks for data removal, doesn't exist anymore, or is blacklisted
         """
-        _drop(self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,))
+        if self._use_threads:
+            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,))
+        else:
+            _drop(self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,))
 
     async def drop_event_for_user(self: Self, dispatch_name: str, user_id: int) -> None:
         """
@@ -617,11 +646,12 @@ class Scheduler:
             A reminder system allowing a user to unschedule all reminders
             without effecting how other extensions might use this.
         """
-        _drop(
-            self._connection,
-            UNSCHEDULE_ALL_BY_NAME_AND_USER_STATEMENT,
-            (dispatch_name, user_id),
-        )
+        f = _drop
+        args = (self._connection, UNSCHEDULE_ALL_BY_NAME_AND_USER_STATEMENT, (dispatch_name, user_id))
+        if self._use_threads:
+            await asyncio.to_thread(f, *args)
+        else:
+            f(*args)
 
     async def drop_guild_schedule(self: Self, guild_id: int) -> None:
         """
@@ -630,7 +660,10 @@ class Scheduler:
         Intended use case:
             clearing sccheduled events for a guild when leaving it.
         """
-        _drop(self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,))
+        if self._use_threads:
+            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,))
+        else:
+            _drop(self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,))
 
     async def drop_event_for_guild(self: Self, dispatch_name: str, guild_id: int) -> None:
         """
@@ -639,11 +672,12 @@ class Scheduler:
         Intended use case example:
             An admin command allowing clearing all scheduled messages for a guild.
         """
-        _drop(
-            self._connection,
-            UNSCHEDULE_ALL_BY_NAME_AND_GUILD_STATEMENT,
-            (dispatch_name, guild_id),
-        )
+        f = _drop
+        args = (self._connection, UNSCHEDULE_ALL_BY_NAME_AND_GUILD_STATEMENT, (dispatch_name, guild_id))
+        if self._use_threads:
+            await asyncio.to_thread(f, *args)
+        else:
+            f(*args)
 
     async def drop_member_schedule(self: Self, guild_id: int, user_id: int) -> None:
         """
@@ -652,11 +686,12 @@ class Scheduler:
         Intended use case:
             clearing sccheduled events for a member that leaves a guild
         """
-        _drop(
-            self._connection,
-            UNSCHEDULE_ALL_BY_MEMBER_STATEMENT,
-            (guild_id, user_id),
-        )
+        f = _drop
+        args = (self._connection, UNSCHEDULE_ALL_BY_MEMBER_STATEMENT, (guild_id, user_id))
+        if self._use_threads:
+            await asyncio.to_thread(f, *args)
+        else:
+            f(*args)
 
     async def drop_event_for_member(self: Self, dispatch_name: str, guild_id: int, user_id: int) -> None:
         """
@@ -665,21 +700,30 @@ class Scheduler:
         Intended use case example:
             see user example, but in a guild
         """
-        _drop(
+        f = _drop
+        args = (
             self._connection,
             UNSCHEDULE_ALL_BY_NAME_AND_MEMBER_STATEMENT,
             (dispatch_name, guild_id, user_id),
         )
+        if self._use_threads:
+            await asyncio.to_thread(f, *args)
+        else:
+            f(*args)
 
     async def list_event_schedule_for_user(self: Self, dispatch_name: str, user_id: int) -> list[ScheduledDispatch]:
         """
         list the events of a specified name scheduled for a user (by user_id)
         """
-        return _query(
+        f = _query
+        args = (
             self._connection,
             SELECT_ALL_BY_NAME_AND_USER_STATEMENT,
             (dispatch_name, user_id),
         )
+        if self._use_threads:
+            return await asyncio.to_thread(f, *args)
+        return f(*args)
 
     async def list_event_schedule_for_member(
         self: Self,
@@ -690,21 +734,29 @@ class Scheduler:
         """
         list the events of a specified name scheduled for a member (by guild_id, user_id)
         """
-        return _query(
+        f = _query
+        args = (
             self._connection,
             SELECT_ALL_BY_NAME_AND_MEMBER_STATEMENT,
             (dispatch_name, guild_id, user_id),
         )
+        if self._use_threads:
+            return await asyncio.to_thread(f, *args)
+        return f(*args)
 
     async def list_event_schedule_for_guild(self: Self, dispatch_name: str, guild_id: int) -> list[ScheduledDispatch]:
         """
         list the events of a specified name scheduled for a guild (by guild_id)
         """
-        return _query(
+        f = _query
+        args = (
             self._connection,
             SELECT_ALL_BY_NAME_AND_USER_STATEMENT,
             (dispatch_name, guild_id),
         )
+        if self._use_threads:
+            return await asyncio.to_thread(f, *args)
+        return f(*args)
 
     @staticmethod
     def time_str_from_params(year: int, month: int, day: int, hour: int, minute: int) -> str:
