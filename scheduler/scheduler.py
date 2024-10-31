@@ -106,7 +106,8 @@ _uuid7 = _uuid7gen()
 
 __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
 
-SQLROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
+SQLROW_RET_ROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None, bool]
+SQL_INSERT_ROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
 DATE_FMT = r"%Y-%m-%d %H:%M"
 
 # There's a slight overhead of using TEXT here for a uuid.
@@ -119,10 +120,9 @@ CREATE TABLE IF NOT EXISTS scheduled_dispatches (
     dispatch_zone TEXT NOT NULL,
     associated_guild INTEGER,
     associated_user INTEGER,
-    dispatch_extra BLOB
+    dispatch_extra BLOB,
+    fetched INTEGER DEFAULT false
 ) STRICT, WITHOUT ROWID;
-
-ALTER TABLE scheduled_dispatches ADD COLUMN fetched INTEGER DEFAULT FALSE;
 """
 
 ZONE_SELECTION_STATEMENT = """
@@ -185,25 +185,13 @@ WHERE
 """
 
 SELECT_ALL_BY_NAME_STATEMENT = """
-SELECT
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra
+SELECT *
 FROM scheduled_dispatches
 WHERE dispatch_name = ? AND fetched = FALSE;
 """
 
 SELECT_ALL_BY_NAME_AND_GUILD_STATEMET = """
-SELECT
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra
+SELECT *
 FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
@@ -213,13 +201,7 @@ WHERE
 """
 
 SELECT_ALL_BY_NAME_AND_USER_STATEMENT = """
-SELECT
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra
+SELECT *
 FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
@@ -229,13 +211,7 @@ WHERE
 """
 
 SELECT_ALL_BY_NAME_AND_MEMBER_STATEMENT = """
-SELECT
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra
+SELECT *
 FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
@@ -256,24 +232,11 @@ FETCH_UPCOMING_IN_ZONE_WITH = """
 UPDATE scheduled_dispatches
 SET fetched = TRUE
 WHERE dispatch_time < ? AND dispatch_zone = ? AND fetched = FALSE
-RETURNING
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra;
+RETURNING *;
 """
 
 SELECT_PREVIOUSLY_FETCHED = """
-SELECT
-    dispatch_name,
-    dispatch_time,
-    dispatch_zone,
-    associated_guild,
-    associated_user,
-    dispatch_extra,
-    fetched
+SELECT *
 FROM scheduled_dispatches
 WHERE fetched = TRUE;
 """
@@ -302,9 +265,9 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         return False
 
     @classmethod
-    def from_sqlite_row(cls: type[Self], row: SQLROW_TYPE) -> Self:
-        tid, name, time, zone, guild, user, extra_bytes = row
-        return cls(tid, name, time, zone, guild, user, extra_bytes)
+    def from_sqlite_row(cls: type[Self], row: SQLROW_RET_ROW_TYPE) -> Self:
+        tid, name, time, zone, guild, user, extra_bytes, fetched = row
+        return cls(tid, name, time, zone, guild, user, extra_bytes, fetched)
 
     @classmethod
     def from_exposed_api(
@@ -320,7 +283,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         packed = None if extra is NoValue else msgpack_encode(extra)
         return cls(_uuid7(), name, time, zone, guild, user, packed)
 
-    def to_sqlite_row(self: Self) -> SQLROW_TYPE:
+    def to_sqlite_row(self: Self) -> SQL_INSERT_ROW_TYPE:
         return (
             self.task_id,
             self.dispatch_name,
@@ -345,11 +308,10 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
 
 def _setup_db(conn: apsw.Connection) -> set[str]:
     conn.pragma("analysis_limit", 400)
-    with conn:
-        cursor = conn.cursor()
-        cursor.execute(INITIALIZATION_STATEMENTS)
-        cursor.execute(ZONE_SELECTION_STATEMENT)
-        return set(chain.from_iterable(cursor))
+    cursor = conn.cursor()
+    cursor.execute(INITIALIZATION_STATEMENTS)
+    cursor.execute(ZONE_SELECTION_STATEMENT)
+    return set(chain.from_iterable(cursor))
 
 
 def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> list[ScheduledDispatch]:
