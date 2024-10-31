@@ -14,7 +14,7 @@ import random
 import time
 from collections.abc import Callable
 from datetime import timedelta
-from itertools import chain
+from itertools import chain, cycle
 from pathlib import Path
 from types import TracebackType
 from typing import Literal, Protocol, Self, TypeVar
@@ -344,6 +344,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
 
 
 def _setup_db(conn: apsw.Connection) -> set[str]:
+    conn.pragma("analysis_limit", 400)
     with conn:
         cursor = conn.cursor()
         cursor.execute(INITIALIZATION_STATEMENTS)
@@ -465,6 +466,7 @@ class Scheduler:
         # differing granularities here, + a delay on retrieving in .get_next()
         # ensures closest
         sleep_gran = self.granularity * 25
+        should_optimize = cycle([False] * 99 + [True])
         while (not self._closing) and await asyncio.sleep(sleep_gran, self._ready):
             # Lock needed to ensure that once the db is dropping rows
             # that a graceful shutdown doesn't drain the queue until entries are in it.
@@ -476,6 +478,8 @@ class Scheduler:
                 scheduled = _get_scheduled(self._connection, self.granularity, self._zones)
                 for s in scheduled:
                     await self._queue.put(s)
+                if next(should_optimize):
+                    self._connection.pragma("optimize")
 
     async def __aexit__(
         self: Self,
