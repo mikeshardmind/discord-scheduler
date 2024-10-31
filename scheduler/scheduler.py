@@ -30,10 +30,13 @@ from msgspec.msgpack import encode as msgpack_encode
 
 T = TypeVar("T")
 
+
 class _Internal(enum.Enum):
     NoValue = enum.auto()
+
     def __bool__(self):
         return False
+
 
 #: Used as a Sentinel to mark a value absence seperately from user-provided None
 #: You should not provide this value manually, but may recieve it where documented.
@@ -120,6 +123,8 @@ CREATE TABLE IF NOT EXISTS scheduled_dispatches (
     associated_user INTEGER,
     dispatch_extra BLOB
 ) STRICT, WITHOUT ROWID;
+
+ALTER TABLE scheduled_dispatches ADD COLUMN fetched INTEGER DEFAULT FALSE;
 """
 
 ZONE_SELECTION_STATEMENT = """
@@ -182,34 +187,65 @@ WHERE
 """
 
 SELECT_ALL_BY_NAME_STATEMENT = """
-SELECT * FROM scheduled_dispatches WHERE dispatch_name = ?;
+SELECT
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra
+FROM scheduled_dispatches
+WHERE dispatch_name = ? AND fetched = FALSE;
 """
 
 SELECT_ALL_BY_NAME_AND_GUILD_STATEMET = """
-SELECT * FROM scheduled_dispatches
+SELECT
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra
+FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
     AND associated_guild IS NOT NULL
-    AND associated_guild = ?;
+    AND associated_guild = ?
+    AND fetched = FALSE;
 """
 
 SELECT_ALL_BY_NAME_AND_USER_STATEMENT = """
-SELECT * FROM scheduled_dispatches
+SELECT
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra
+FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
     AND associated_user IS NOT NULL
-    AND associated_user = ?;
+    AND associated_user = ?
+    AND fetched = FALSE;
 """
 
 SELECT_ALL_BY_NAME_AND_MEMBER_STATEMENT = """
-SELECT * FROM scheduled_dispatches
+SELECT
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra
+FROM scheduled_dispatches
 WHERE
     dispatch_name = ?
     AND associated_guild IS NOT NULL
     AND associated_user IS NOT NULL
     AND associated_guild = ?
     AND associated_user = ?
-;
+    AND fetched = FALSE;
 """
 
 INSERT_SCHEDULE_STATEMENT = """
@@ -218,10 +254,29 @@ INSERT INTO scheduled_dispatches
 VALUES (?, ?, ?, ?, ?, ?, ?);
 """
 
-DELETE_RETURNING_UPCOMING_IN_ZONE_STATEMENT = """
-DELETE FROM scheduled_dispatches
-WHERE dispatch_time < ? AND dispatch_zone = ?
-RETURNING *;
+FETCH_UPCOMING_IN_ZONE_WITH = """
+UPDATE scheduled_dispatches
+SET fetched = TRUE
+WHERE dispatch_time < ? AND dispatch_zone = ? AND fetched = FALSE
+RETURNING
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra;
+"""
+
+SELECT_PREVIOUSLY_FETCHED = """
+SELECT
+    dispatch_name,
+    dispatch_time,
+    dispatch_zone,
+    associated_guild,
+    associated_user,
+    dispatch_extra
+FROM scheduled_dispatches
+WHERE fetched = TRUE;
 """
 
 
@@ -306,10 +361,17 @@ def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> 
         cursor = conn.cursor()
         for zone in zones:
             local_time = cutoff.to(pytz.timezone(zone)).strftime(DATE_FMT)
-            cursor.execute(DELETE_RETURNING_UPCOMING_IN_ZONE_STATEMENT, (local_time, zone))
+            cursor.execute(FETCH_UPCOMING_IN_ZONE_WITH, (local_time, zone))
             ret.extend(map(ScheduledDispatch.from_sqlite_row, cursor))
 
     return ret
+
+
+def _get_previously_fetched(conn: apsw.Connection) -> list[ScheduledDispatch]:
+    with conn:
+        cursor = conn.cursor()
+        cursor.execute(SELECT_PREVIOUSLY_FETCHED)
+        return [*map(ScheduledDispatch.from_sqlite_row, cursor)]
 
 
 def _schedule(
@@ -442,6 +504,16 @@ class Scheduler:
         finally:
             if dispatch is not None:
                 self._queue.task_done()
+
+    async def get_previously_fetched(self: Self) -> list[ScheduledDispatch]:
+        """Get a list of all previously fetched, but not deleted items.
+        Intended use: recovery of a task queue.
+        """
+        return _get_previously_fetched(self._connection)
+
+    async def task_done(self: Self, obj: ScheduledDispatch, /) -> None:
+        """Mark a scheduled dispatch as having been done, removing it from the backing store"""
+        _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
 
     async def stop_gracefully(self: Self) -> None:
         """Notify the internal scheduling loop to stop scheduling and wait for the internal queue to be empty"""
