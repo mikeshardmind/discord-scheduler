@@ -416,6 +416,19 @@ class Scheduler:
         self._discord_task: asyncio.Task[None] | None = None
         self._use_threads: bool = use_threads
 
+    def run_migration(self, migration_name: str) -> None:
+        """
+        Run a named migration.
+        Migrations should only ever be run once, and only as needed
+        """
+        _known_migrations = {
+            "add_fetched_column": """ALTER TABLE scheduled_dispatches ADD COLUMN fetched INTEGER DEFAULT FALSE;"""
+        }
+        if not (migration := _known_migrations.get(migration_name)):
+            msg = "Unknown migration name"
+            raise RuntimeError(msg)
+        self._connection.execute(migration)
+
     def stop(self: Self) -> None:
         if self._loop_task is None:
             msg = "Contextmanager, use it"
