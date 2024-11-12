@@ -80,18 +80,12 @@ def _uuid7gen() -> Callable[[], str]:
         """
         nonlocal _last_timestamp
         nanoseconds = time.time_ns()
-        if _last_timestamp is not None and nanoseconds <= _last_timestamp:
-            nanoseconds = _last_timestamp + 1
-        _last_timestamp = nanoseconds
-        timestamp_s, timestamp_ns = divmod(nanoseconds, 10**9)
-        subsec_a = timestamp_ns >> 18
-        subsec_b = (timestamp_ns >> 6) & 0x0FFF
-        subsec_seq_node = (timestamp_ns & 0x3F) << 56
-        subsec_seq_node += random.SystemRandom().getrandbits(56)
-        uuid_int = (timestamp_s & 0x0FFFFFFFFF) << 92
-        uuid_int += subsec_a << 80
-        uuid_int += subsec_b << 64
-        uuid_int += subsec_seq_node
+        timestamp_ms = nanoseconds // 1_000_000
+        if _last_timestamp is not None and timestamp_ms <= _last_timestamp:
+            timestamp_ms = _last_timestamp + 1
+        _last_timestamp = timestamp_ms
+        uuid_int = (timestamp_ms & 0xFFFFFFFFFFFF) << 80
+        uuid_int |= random.SystemRandom().getrandbits(76)
         uuid_int &= ~(0xC000 << 48)
         uuid_int |= 0x8000 << 48
         uuid_int &= ~(0xF000 << 64)
