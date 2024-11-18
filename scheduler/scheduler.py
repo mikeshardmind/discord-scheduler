@@ -301,6 +301,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
 
 
 def _setup_db(conn: apsw.Connection) -> set[str]:
+    conn.pragma("optimize", 0x10002)
     conn.pragma("analysis_limit", 400)
     cursor = conn.cursor()
     cursor.execute(INITIALIZATION_STATEMENTS)
