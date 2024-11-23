@@ -16,7 +16,6 @@ from collections.abc import Callable
 from datetime import timedelta
 from itertools import chain, cycle
 from pathlib import Path
-from types import TracebackType
 from typing import Literal, Protocol, Self, TypeVar
 from warnings import warn
 
@@ -47,7 +46,9 @@ type Maybe[T] = T | Literal[_Internal.NoValue]
 
 
 class BotLike(Protocol):
-    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None: ...
+    def dispatch(
+        self: Self, event_name: str, /, *args: object, **kwargs: object
+    ) -> None: ...
 
     async def wait_until_ready(self: Self) -> None: ...
 
@@ -100,8 +101,12 @@ _uuid7 = _uuid7gen()
 
 __all__ = ["DiscordBotScheduler", "ScheduledDispatch", "Scheduler"]
 
-SQLROW_RET_ROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None, bool]
-SQL_INSERT_ROW_TYPE = tuple[str, str, str, str, int | None, int | None, bytes | None]
+SQLROW_RET_ROW_TYPE = tuple[
+    str, str, str, str, int | None, int | None, bytes | None, bool
+]
+SQL_INSERT_ROW_TYPE = tuple[
+    str, str, str, str, int | None, int | None, bytes | None
+]
 DATE_FMT = r"%Y-%m-%d %H:%M"
 
 # There's a slight overhead of using TEXT here for a uuid.
@@ -249,13 +254,19 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
     def __lt__(self: Self, other: object) -> bool:
         if type(self) is type(other):
             assert isinstance(other, ScheduledDispatch)
-            return (self.get_arrow_time(), self.task_id) < (other.get_arrow_time(), other.task_id)
+            return (self.get_arrow_time(), self.task_id) < (
+                other.get_arrow_time(),
+                other.task_id,
+            )
         return False
 
     def __gt__(self: Self, other: object) -> bool:
         if type(self) is type(other):
             assert isinstance(other, ScheduledDispatch)
-            return (self.get_arrow_time(), self.task_id) > (other.get_arrow_time(), other.task_id)
+            return (self.get_arrow_time(), self.task_id) > (
+                other.get_arrow_time(),
+                other.task_id,
+            )
         return False
 
     @classmethod
@@ -289,7 +300,9 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
         )
 
     def get_arrow_time(self: Self) -> arrow.Arrow:
-        return arrow.Arrow.strptime(self.dispatch_time, DATE_FMT, pytz.timezone(self.dispatch_zone))
+        return arrow.Arrow.strptime(
+            self.dispatch_time, DATE_FMT, pytz.timezone(self.dispatch_zone)
+        )
 
     def unpack_extra(self: Self, typ: type[T] = object) -> Maybe[T]:
         """If a type is provided, attempt to deserialize to this type via msgspec"""
@@ -309,7 +322,9 @@ def _setup_db(conn: apsw.Connection) -> set[str]:
     return set(chain.from_iterable(cursor))
 
 
-def _get_scheduled(conn: apsw.Connection, granularity: int, zones: set[str]) -> list[ScheduledDispatch]:
+def _get_scheduled(
+    conn: apsw.Connection, granularity: int, zones: set[str]
+) -> list[ScheduledDispatch]:
     ret: list[ScheduledDispatch] = []
     if not zones:
         return ret
@@ -361,18 +376,25 @@ def _schedule(
     return obj.task_id
 
 
-def _query(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) -> list[ScheduledDispatch]:
+def _query(
+    conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]
+) -> list[ScheduledDispatch]:
     cursor = conn.cursor()
-    return [ScheduledDispatch.from_sqlite_row(row) for row in cursor.execute(query_str, params)]
+    return [
+        ScheduledDispatch.from_sqlite_row(row)
+        for row in cursor.execute(query_str, params)
+    ]
 
 
-def _drop(conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]) -> None:
+def _drop(
+    conn: apsw.Connection, query_str: str, params: tuple[int | str, ...]
+) -> None:
     with conn:
         cursor = conn.cursor()
         cursor.execute(query_str, params)
 
 
-def resolve_path_with_links(path: Path, folder: bool = False) -> Path:
+def resolve_path_with_links(path: Path, *, folder: bool = False) -> Path:
     """
     Python only resolves with strict=True if the path exists.
     """
@@ -381,14 +403,20 @@ def resolve_path_with_links(path: Path, folder: bool = False) -> Path:
     except FileNotFoundError:
         path = resolve_path_with_links(path.parent, folder=True) / path.name
         if folder:
-            path.mkdir(mode=0o700)  # python's default is world read/write/traversable... (0o777)
+            path.mkdir(
+                mode=0o700
+            )  # python's default is world read/write/traversable... (0o777)
         else:
-            path.touch(mode=0o600)  # python's default is world read/writable... (0o666)
+            path.touch(
+                mode=0o600
+            )  # python's default is world read/writable... (0o666)
         return path.resolve(strict=True)
 
 
 class Scheduler:
-    def __init__(self, db_path: Path, granularity: int = 1, use_threads: bool = False):
+    def __init__(
+        self, db_path: Path, granularity: int = 1, *, use_threads: bool = False
+    ):
         if granularity < 1:
             msg = "Granularity must be a positive iteger number of minutes"
             raise ValueError(msg)
@@ -402,8 +430,12 @@ class Scheduler:
         conn.pragma("foreign_keys", "ON")
         conn.config(apsw.SQLITE_DBCONFIG_DQS_DML, 0)
         conn.config(apsw.SQLITE_DBCONFIG_DQS_DDL, 0)
-        self._zones: set[str] = set()  # We don't re-narrow this anywhere currently, only expand it.
-        self._queue: asyncio.PriorityQueue[ScheduledDispatch] = asyncio.PriorityQueue()
+        self._zones: set[str] = (
+            set()
+        )  # We don't re-narrow this anywhere currently, only expand it.
+        self._queue: asyncio.PriorityQueue[ScheduledDispatch] = (
+            asyncio.PriorityQueue()
+        )
         self._ready = False
         self._closing = False
         self._lock = asyncio.Lock()
@@ -445,7 +477,9 @@ class Scheduler:
         # ensures closest
         sleep_gran = self.granularity * 25
         should_optimize = cycle([False] * 99 + [True])
-        while (not self._closing) and await asyncio.sleep(sleep_gran, self._ready):
+        while (not self._closing) and await asyncio.sleep(
+            sleep_gran, self._ready
+        ):
             # Lock needed to ensure that once the db is dropping rows
             # that a graceful shutdown doesn't drain the queue until entries are in it.
             async with self._lock:
@@ -459,14 +493,11 @@ class Scheduler:
                 if next(should_optimize):
                     self._connection.pragma("optimize")
 
-    async def __aexit__(
-        self: Self,
-        exc_type: type[Exception],
-        exc_value: Exception,
-        traceback: TracebackType,
-    ):
+    async def __aexit__(self: Self, *_dont_care: object):
         if not self._closing:
-            msg = "Exiting without use of stop_gracefully may cause loss of tasks"
+            msg = (
+                "Exiting without use of stop_gracefully may cause loss of tasks"
+            )
             warn(msg, stacklevel=2)
         self.stop()
 
@@ -496,9 +527,16 @@ class Scheduler:
     async def task_done(self: Self, obj: ScheduledDispatch, /) -> None:
         """Mark a scheduled dispatch as having been done, removing it from the backing store"""
         if self._use_threads:
-            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
+            await asyncio.to_thread(
+                _drop,
+                self._connection,
+                UNSCHEDULE_BY_UUID_STATEMENT,
+                (obj.task_id,),
+            )
         else:
-            _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,))
+            _drop(
+                self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (obj.task_id,)
+            )
 
     async def stop_gracefully(self: Self) -> None:
         """Notify the internal scheduling loop to stop scheduling and wait for the internal queue to be empty"""
@@ -512,7 +550,9 @@ class Scheduler:
         self._zones = _setup_db(self._connection)
         self._ready = True
         self._loop_task = asyncio.create_task(self._loop())
-        self._loop_task.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+        self._loop_task.add_done_callback(
+            lambda f: f.exception() if not f.cancelled() else None
+        )
         return self
 
     async def schedule_event(
@@ -592,7 +632,9 @@ class Scheduler:
         Non-existent uuids are silently handled.
         """
         if self._use_threads:
-            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,))
+            await asyncio.to_thread(
+                _drop, self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,)
+            )
         else:
             _drop(self._connection, UNSCHEDULE_BY_UUID_STATEMENT, (uuid,))
 
@@ -604,11 +646,20 @@ class Scheduler:
             removing everything associated to a user who asks for data removal, doesn't exist anymore, or is blacklisted
         """
         if self._use_threads:
-            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,))
+            await asyncio.to_thread(
+                _drop,
+                self._connection,
+                UNSCHEDULE_ALL_BY_USER_STATEMENT,
+                (user_id,),
+            )
         else:
-            _drop(self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,))
+            _drop(
+                self._connection, UNSCHEDULE_ALL_BY_USER_STATEMENT, (user_id,)
+            )
 
-    async def drop_event_for_user(self: Self, dispatch_name: str, user_id: int) -> None:
+    async def drop_event_for_user(
+        self: Self, dispatch_name: str, user_id: int
+    ) -> None:
         """
         Drop scheduled events dispatched to `dispatch_name` for user (by user_id)
 
@@ -617,7 +668,11 @@ class Scheduler:
             without effecting how other extensions might use this.
         """
         f = _drop
-        args = (self._connection, UNSCHEDULE_ALL_BY_NAME_AND_USER_STATEMENT, (dispatch_name, user_id))
+        args = (
+            self._connection,
+            UNSCHEDULE_ALL_BY_NAME_AND_USER_STATEMENT,
+            (dispatch_name, user_id),
+        )
         if self._use_threads:
             await asyncio.to_thread(f, *args)
         else:
@@ -631,11 +686,20 @@ class Scheduler:
             clearing sccheduled events for a guild when leaving it.
         """
         if self._use_threads:
-            await asyncio.to_thread(_drop, self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,))
+            await asyncio.to_thread(
+                _drop,
+                self._connection,
+                UNSCHEDULE_ALL_BY_GUILD_STATEMENT,
+                (guild_id,),
+            )
         else:
-            _drop(self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,))
+            _drop(
+                self._connection, UNSCHEDULE_ALL_BY_GUILD_STATEMENT, (guild_id,)
+            )
 
-    async def drop_event_for_guild(self: Self, dispatch_name: str, guild_id: int) -> None:
+    async def drop_event_for_guild(
+        self: Self, dispatch_name: str, guild_id: int
+    ) -> None:
         """
         Drop scheduled events dispatched to `dispatch_name` for guild (by guild_id)
 
@@ -643,13 +707,19 @@ class Scheduler:
             An admin command allowing clearing all scheduled messages for a guild.
         """
         f = _drop
-        args = (self._connection, UNSCHEDULE_ALL_BY_NAME_AND_GUILD_STATEMENT, (dispatch_name, guild_id))
+        args = (
+            self._connection,
+            UNSCHEDULE_ALL_BY_NAME_AND_GUILD_STATEMENT,
+            (dispatch_name, guild_id),
+        )
         if self._use_threads:
             await asyncio.to_thread(f, *args)
         else:
             f(*args)
 
-    async def drop_member_schedule(self: Self, guild_id: int, user_id: int) -> None:
+    async def drop_member_schedule(
+        self: Self, guild_id: int, user_id: int
+    ) -> None:
         """
         Drop all scheduled events for a guild (by guild_id, user_id)
 
@@ -657,13 +727,19 @@ class Scheduler:
             clearing sccheduled events for a member that leaves a guild
         """
         f = _drop
-        args = (self._connection, UNSCHEDULE_ALL_BY_MEMBER_STATEMENT, (guild_id, user_id))
+        args = (
+            self._connection,
+            UNSCHEDULE_ALL_BY_MEMBER_STATEMENT,
+            (guild_id, user_id),
+        )
         if self._use_threads:
             await asyncio.to_thread(f, *args)
         else:
             f(*args)
 
-    async def drop_event_for_member(self: Self, dispatch_name: str, guild_id: int, user_id: int) -> None:
+    async def drop_event_for_member(
+        self: Self, dispatch_name: str, guild_id: int, user_id: int
+    ) -> None:
         """
         Drop scheduled events dispatched to `dispatch_name` for member (by guild_id, user_id)
 
@@ -681,7 +757,9 @@ class Scheduler:
         else:
             f(*args)
 
-    async def list_event_schedule_for_user(self: Self, dispatch_name: str, user_id: int) -> list[ScheduledDispatch]:
+    async def list_event_schedule_for_user(
+        self: Self, dispatch_name: str, user_id: int
+    ) -> list[ScheduledDispatch]:
         """
         list the events of a specified name scheduled for a user (by user_id)
         """
@@ -714,7 +792,9 @@ class Scheduler:
             return await asyncio.to_thread(f, *args)
         return f(*args)
 
-    async def list_event_schedule_for_guild(self: Self, dispatch_name: str, guild_id: int) -> list[ScheduledDispatch]:
+    async def list_event_schedule_for_guild(
+        self: Self, dispatch_name: str, guild_id: int
+    ) -> list[ScheduledDispatch]:
         """
         list the events of a specified name scheduled for a guild (by guild_id)
         """
@@ -729,7 +809,9 @@ class Scheduler:
         return f(*args)
 
     @staticmethod
-    def time_str_from_params(year: int, month: int, day: int, hour: int, minute: int) -> str:
+    def time_str_from_params(
+        year: int, month: int, day: int, hour: int, minute: int
+    ) -> str:
         """
         A quick helper for people working with other time representations
         (if you have a datetime object, just use strftime with "%Y-%m-%d %H:%M")
@@ -746,7 +828,13 @@ class DiscordBotScheduler(Scheduler):
     you get a notice of it statically.
     """
 
-    async def _bot_dispatch_loop(self: Self, bot: BotLike, wait_until_ready: bool, redispatch_fetched: bool) -> None:
+    async def _bot_dispatch_loop(
+        self: Self,
+        bot: BotLike,
+        *,
+        wait_until_ready: bool,
+        redispatch_fetched: bool,
+    ) -> None:
         if not self._ready:
             msg = "context manager, use it"
             raise RuntimeError(msg)
@@ -756,10 +844,14 @@ class DiscordBotScheduler(Scheduler):
 
         if redispatch_fetched:
             for scheduled in await self.get_previously_fetched():
-                bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
+                bot.dispatch(
+                    f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled
+                )
 
         while scheduled := await self.get_next():
-            bot.dispatch(f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled)
+            bot.dispatch(
+                f"sinbad_scheduler_{scheduled.dispatch_name}", scheduled
+            )
 
     def start_dispatch_to_bot(
         self: Self,
@@ -796,6 +888,12 @@ class DiscordBotScheduler(Scheduler):
             msg = "context manager, use it"
             raise RuntimeError(msg)
 
-        coro = self._bot_dispatch_loop(bot, wait_until_ready, redispatch_fetched_first)
+        coro = self._bot_dispatch_loop(
+            bot,
+            wait_until_ready=wait_until_ready,
+            redispatch_fetched=redispatch_fetched_first,
+        )
         self._discord_task = asyncio.create_task(coro)
-        self._discord_task.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
+        self._discord_task.add_done_callback(
+            lambda f: f.exception() if not f.cancelled() else None
+        )

@@ -6,7 +6,12 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
 Copyright (C) 2023 Michael Hall <https://github.com/mikeshardmind>
 """
 
-from .scheduler import DiscordBotScheduler, NoValue, ScheduledDispatch, Scheduler
+from .scheduler import (
+    DiscordBotScheduler,
+    NoValue,
+    ScheduledDispatch,
+    Scheduler,
+)
 
 __all__ = ["DiscordBotScheduler", "NoValue", "ScheduledDispatch", "Scheduler"]
-__version__ = "2024.11.22"
+__version__ = "2024.11.23"

@@ -23,7 +23,9 @@ class BotLikeThing:
     def __init__(self) -> None:
         self.recv: list[ScheduledDispatch] = []
 
-    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
+    def dispatch(
+        self: Self, event_name: str, /, *args: object, **kwargs: object
+    ) -> None:
         self.recv.append(args[0])  # type: ignore
 
     async def wait_until_ready(self: Self) -> None:
@@ -35,7 +37,9 @@ async def amain(path: Path) -> list[str]:
     async with Scheduler(path, granularity=1) as sched:
         sched.start_dispatch_to_bot(bot)
 
-        when = (datetime.now(tz=UTC) + timedelta(seconds=10)).strftime(r"%Y-%m-%d %H:%M")
+        when = (datetime.now(tz=UTC) + timedelta(seconds=10)).strftime(
+            r"%Y-%m-%d %H:%M"
+        )
 
         uuid1 = await sched.schedule_event(
             dispatch_name="uuid1",
@@ -129,7 +133,9 @@ async def amain(path: Path) -> list[str]:
                 failures.append(f"Failed to unpack extra got {exc=}")
             else:
                 if extra != {(1, 2, 3): None}:
-                    failures.append(f"Unpacking extra did not result in expectations, {extra=}")
+                    failures.append(
+                        f"Unpacking extra did not result in expectations, {extra=}"
+                    )
 
     if expected:
         failures.append(f"expected tasks did not dispatch {expected=}")

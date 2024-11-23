@@ -33,7 +33,11 @@ class PathlibTesting(unittest.TestCase):
             path.resolve(strict=True)
 
         new_path = scheduler.scheduler.resolve_path_with_links(path)
-        self.assertEqual(new_path, resolved_path, f"unexpected result {new_path=} {resolved_path=}")
+        self.assertEqual(
+            new_path,
+            resolved_path,
+            f"unexpected result {new_path=} {resolved_path=}",
+        )
         parent = path.parent
         path.unlink()
         parent.rmdir()
