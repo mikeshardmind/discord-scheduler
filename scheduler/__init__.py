@@ -14,4 +14,4 @@ from .scheduler import (
 )
 
 __all__ = ["DiscordBotScheduler", "NoValue", "ScheduledDispatch", "Scheduler"]
-__version__ = "2024.11.23"
+__version__ = "2024.12.10"

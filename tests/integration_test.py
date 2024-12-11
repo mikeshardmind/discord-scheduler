@@ -23,12 +23,12 @@ class BotLikeThing:
     def __init__(self) -> None:
         self.recv: list[ScheduledDispatch] = []
 
-    def dispatch(
-        self: Self, event_name: str, /, *args: object, **kwargs: object
-    ) -> None:
-        self.recv.append(args[0])  # type: ignore
+    def dispatch(self: Self, event_name: str, /, *args: object, **kwargs: object) -> None:
+        payload = args[0]
+        if isinstance(payload, ScheduledDispatch):
+            self.recv.append(payload)
 
-    async def wait_until_ready(self: Self) -> None:
+    async def wait_until_ready(self: Self) -> None:  # noqa: PLR6301
         return
 
 
@@ -37,9 +37,7 @@ async def amain(path: Path) -> list[str]:
     async with Scheduler(path, granularity=1) as sched:
         sched.start_dispatch_to_bot(bot)
 
-        when = (datetime.now(tz=UTC) + timedelta(seconds=10)).strftime(
-            r"%Y-%m-%d %H:%M"
-        )
+        when = (datetime.now(tz=UTC) + timedelta(seconds=10)).strftime(r"%Y-%m-%d %H:%M")
 
         uuid1 = await sched.schedule_event(
             dispatch_name="uuid1",
