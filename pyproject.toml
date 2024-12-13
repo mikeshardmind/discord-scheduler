@@ -67,6 +67,9 @@ convention = "google"
 "typing.TypeGuard".msg = "TypeGuard is fundamentally unsafe"
 "typing_extensions.TypeIs".msg = "TypeIs is fundamentally unsafe, even when using it as described to be safe"
 "typing_extensions.TypeGuard".msg = "TypeGuard is fundamentally unsafe"
+"typing.runtime_checkable".msg = "Runtime checkable is fundamentally unsafe."
+"typing_extensions.runtime_checkable".msg = "Runtime checkable is fundamentally unsafe."
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
