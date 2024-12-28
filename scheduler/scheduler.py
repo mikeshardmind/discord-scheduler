@@ -16,7 +16,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from itertools import chain, cycle
 from pathlib import Path
-from typing import Literal, Protocol, Self, TypeVar
+from typing import Literal, Protocol, Self
 from warnings import warn
 
 import apsw
@@ -26,8 +26,6 @@ import pytz
 from msgspec import Struct
 from msgspec.msgpack import decode as msgpack_decode
 from msgspec.msgpack import encode as msgpack_encode
-
-T = TypeVar("T")
 
 
 class _Internal(enum.Enum):
@@ -63,7 +61,7 @@ def _uuid7gen() -> Callable[[], str]:
     UUIDv7 as described in rfc9562 section 5.7 utilizing the
     optional sub-millisecond timestamp fraction described in section 6.2 method 3
     """
-    _last_timestamp: int | None = None
+    last_timestamp: int | None = None
 
     def uuid7() -> str:
         """This is unique identifer generator
@@ -79,12 +77,12 @@ def _uuid7gen() -> Callable[[], str]:
         on outside of this library and may be changed in the future for
         better performance within this library.
         """
-        nonlocal _last_timestamp
+        nonlocal last_timestamp
         nanoseconds = time.time_ns()
         timestamp_ms = nanoseconds // 1_000_000
-        if _last_timestamp is not None and timestamp_ms <= _last_timestamp:
-            timestamp_ms = _last_timestamp + 1
-        _last_timestamp = timestamp_ms
+        if last_timestamp is not None and timestamp_ms <= last_timestamp:
+            timestamp_ms = last_timestamp + 1
+        last_timestamp = timestamp_ms
         uuid_int = (timestamp_ms & 0xFFFFFFFFFFFF) << 80
         uuid_int |= random.SystemRandom().getrandbits(76)
         uuid_int &= ~(0xC000 << 48)
@@ -302,7 +300,7 @@ class ScheduledDispatch(Struct, frozen=True, gc=False):
             self.dispatch_time, DATE_FMT, pytz.timezone(self.dispatch_zone)
         )
 
-    def unpack_extra(self: Self, typ: type[T] = object) -> Maybe[T]:
+    def unpack_extra[T](self: Self, typ: type[T] = object) -> Maybe[T]:
         """If a type is provided, attempt to deserialize to this type via msgspec"""
         if self.dispatch_extra is not None:
             if typ is object:
