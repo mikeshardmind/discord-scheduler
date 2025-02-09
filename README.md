@@ -160,7 +160,25 @@ docstrings provide accurate info, and parameter names and types are consise and 
 
 ## Help?
 
-Open an issue here if you need it.
+### Preffered method
+
+Open an issue or discussion here if you need it.
+
+### discord.py server (read this first)
+
+Note: This quite reasonably falls in a grey area at best with rule 14 in the discord.py
+server. If you do ask for help with it there, please be considerate of anyone willing to help
+with it despite being in this grey area, and point out where you got it.
+
+Rule 14 is very sensible, and is designed around those helping not needing to help
+with things that are internal to discord.py and unsupported.
+
+If at any point this stops working because of a change in discord or discord.py,
+it would be limited to the specific class ``DiscordBotScheduler`` and my fault
+for building on a part of the library which isn't guaranteed. Issues arising from this
+are *strictly* due to rule 14, please stick to opening an issue here if my use
+of bot.dispatch breaks at some future date, or only use the base ``Scheduler``
+class to avoid the rule 14 interaction.
 
 
 ### Footnotes
